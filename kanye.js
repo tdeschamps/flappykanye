@@ -51,7 +51,7 @@ export function updateKanyeRig(rig, state, dt, accentColor) {
 
   // Cap tilt at 30% of body rotation, plus idle drift
   const capTilt = rot * 0.3 + (state.mode === 'idle' ? Math.sin(state.t * 0.5) * 3 : 0);
-  rig.cap.setAttribute('transform', `rotate(${capTilt.toFixed(2)} 0 -10)`);
+  rig.cap.setAttribute('transform', `rotate(${capTilt.toFixed(2)} 0 -18)`);
 
   // Jaw drop
   const jawY = rig.jawDrop * 6 + (state.mode === 'dead' ? 4 : 0);
@@ -60,7 +60,7 @@ export function updateKanyeRig(rig, state, dt, accentColor) {
   // Glint sweep — opacity high during sweep window, x interpolated
   if (rig.glintT < 1 && rig.glintT > 0) {
     const op = Math.sin(rig.glintT * Math.PI) * 0.85;
-    const x  = -22 + rig.glintT * 40;
+    const x  = -19 + rig.glintT * 36;
     rig.glint.setAttribute('opacity', op.toFixed(2));
     rig.glint.setAttribute('x', x.toFixed(2));
   } else {
