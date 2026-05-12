@@ -5,6 +5,7 @@ import {
 import {
   createKanyeRig, placeKanye, updateKanyeRig, triggerFlap, triggerScore, resetKanyeRig
 } from './kanye.js';
+import * as audio from './audio.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -19,6 +20,14 @@ const deathChamberEl = document.getElementById('death-chamber');
 const stageEl = document.getElementById('stage');
 const kanyeSvg = document.getElementById('kanye');
 const kanyeRig = createKanyeRig(kanyeSvg);
+
+const muteBtn = document.getElementById('mute-btn');
+muteBtn.textContent = audio.isMuted() ? 'SOUND OFF' : 'SOUND ON';
+muteBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  audio.setMuted(!audio.isMuted());
+  muteBtn.textContent = audio.isMuted() ? 'SOUND OFF' : 'SOUND ON';
+});
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function hexToRgb(h) {
@@ -55,6 +64,8 @@ function flap() {
     deathChamberEl.style.display = 'none';
   }
   triggerFlap(kanyeRig);
+  audio.init();
+  audio.flap();
   physicsFlap(state);
 }
 
@@ -63,6 +74,7 @@ function die() {
   state.mode = 'dead';
   state.shake = 22;
   state.flash = 1;
+  audio.death();
   if (state.score > state.best) {
     state.best = state.score;
     localStorage.setItem('flappykanye_best', String(state.best));
@@ -81,6 +93,12 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' || e.code === 'ArrowUp') {
     e.preventDefault();
     flap();
+  }
+});
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'm' || e.key === 'M') {
+    audio.setMuted(!audio.isMuted());
+    muteBtn.textContent = audio.isMuted() ? 'SOUND OFF' : 'SOUND ON';
   }
 });
 canvas.addEventListener('pointerdown', onTap);
@@ -209,6 +227,8 @@ function update(dt) {
       scoreEl.textContent = String(state.score);
       chamberEl.textContent = chamberFor(state.score).from.name;
       triggerScore(kanyeRig);
+      audio.score(state.lastScoredGapY);
+      if (state.score % 5 === 0) audio.chamber(chamberFor(state.score).idx);
     } else if (ev === 'death') {
       die();
     }

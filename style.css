@@ -137,3 +137,15 @@
   transform-box: fill-box;
   transform-origin: center;
 }
+.mute-btn {
+  background: transparent;
+  border: 1px solid rgba(235,230,220,0.4);
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  padding: 4px 10px;
+  cursor: pointer;
+  pointer-events: auto;
+  text-transform: uppercase;
+}
+.mute-btn:hover { border-color: var(--bone); }
