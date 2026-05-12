@@ -6,6 +6,7 @@ import {
   createKanyeRig, placeKanye, updateKanyeRig, triggerFlap, triggerScore, resetKanyeRig
 } from './kanye.js';
 import * as audio from './audio.js';
+import { createShaderBackdrop, hexToVec3, mixVec3 } from './shader.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -18,6 +19,8 @@ const chamberEl = document.getElementById('chamber');
 const overlay = document.getElementById('overlay');
 const deathChamberEl = document.getElementById('death-chamber');
 const stageEl = document.getElementById('stage');
+const bgCanvas = document.getElementById('bg');
+const shader = createShaderBackdrop(bgCanvas);
 const kanyeSvg = document.getElementById('kanye');
 const kanyeRig = createKanyeRig(kanyeSvg);
 
@@ -259,6 +262,23 @@ function render() {
   };
   const drawPalette = { from: blended.a, to: blended.b, accent: blended.accent };
 
+  if (shader) {
+    const c = chamberFor(state.score);
+    const a1 = hexToVec3(c.from.a), a2 = hexToVec3(c.to.a);
+    const b1 = hexToVec3(c.from.b), b2 = hexToVec3(c.to.b);
+    shader.render({
+      time: state.t,
+      colorA: mixVec3(a1, a2, c.t),
+      colorB: mixVec3(b1, b2, c.t),
+      accent: hexToVec3(c.from.accent),
+      aperturePos: [0.5, 0.55],
+      apertureSize: [0.62, 0.42],
+      flash: state.flash,
+      shake: state.shake,
+      mode: state.mode === 'idle' ? 0 : state.mode === 'playing' ? 1 : 2,
+    });
+  }
+
   ctx.save();
   if (state.shake > 0) {
     ctx.translate(
@@ -267,7 +287,7 @@ function render() {
     );
   }
 
-  drawTurrellBackdrop(drawPalette, state.t);
+  if (!shader) drawTurrellBackdrop(drawPalette, state.t);
   drawForegroundType(drawPalette);
   for (const p of state.pipes) drawMonolith(p, drawPalette);
   // Death flash — red Yeezus burst.
