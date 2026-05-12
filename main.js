@@ -288,7 +288,7 @@ function render() {
   }
 
   if (!shader) drawTurrellBackdrop(drawPalette, state.t);
-  drawForegroundType(drawPalette);
+  if (!shader) drawForegroundType(drawPalette);
   for (const p of state.pipes) drawMonolith(p, drawPalette);
   // Death flash — red Yeezus burst.
   if (state.flash > 0) {
