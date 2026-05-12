@@ -13,6 +13,7 @@ uniform vec3  uColorB;
 uniform vec3  uAccent;
 uniform vec2  uAperturePos;
 uniform vec2  uApertureSize;
+uniform float uApertureRadius;
 uniform float uFlashIntensity;
 uniform float uShake;
 uniform int   uMode;
@@ -42,18 +43,21 @@ vec3 fieldAt(vec2 uv, float t) {
   float k = clamp((r1 * 0.6 + r2 * 0.4), 0.0, 1.0);
   vec3 col = mix(uColorB, uColorA, k);
 
-  // Aperture: the iconic Turrell light rectangle.
-  vec2 apHalf = uApertureSize * 0.5;
+  // Aperture geometry. Breathe size with a slow sin so the portal feels alive.
+  // Clamp the radius so it cannot exceed the smaller half-axis (else SDF inverts).
+  float breathe = 1.0 + sin(t * 0.6) * 0.025;
+  vec2 apHalf = uApertureSize * 0.5 * breathe;
+  float r = min(uApertureRadius, min(apHalf.x, apHalf.y) * 0.999);
   float apJitter = sin(t * 0.4) * 0.005;
   vec2 apCenter = uAperturePos + vec2(0.0, apJitter);
-  float sd = sdRoundRect(uv, apCenter, apHalf, 0.012);
+  float sd = sdRoundRect(uv, apCenter, apHalf, r);
 
   // Cheap bloom — sample SDF at offsets, average to soften edges.
   float glow = 0.0;
   for (int i = 0; i < 4; i++) {
     float a = float(i) * 1.5707963;
     vec2 o = vec2(cos(a), sin(a)) * 0.006;
-    glow += smoothstep(0.05, -0.02, sdRoundRect(uv + o, apCenter, apHalf, 0.012));
+    glow += smoothstep(0.05, -0.02, sdRoundRect(uv + o, apCenter, apHalf, r));
   }
   glow *= 0.25;
 
@@ -147,7 +151,8 @@ export function createShaderBackdrop(canvas) {
 
   const uniformNames = [
     'uTime', 'uResolution', 'uColorA', 'uColorB', 'uAccent',
-    'uAperturePos', 'uApertureSize', 'uFlashIntensity', 'uShake', 'uMode',
+    'uAperturePos', 'uApertureSize', 'uApertureRadius',
+    'uFlashIntensity', 'uShake', 'uMode',
   ];
   const u = {};
   for (const n of uniformNames) u[n] = gl.getUniformLocation(program, n);
@@ -177,6 +182,7 @@ export function createShaderBackdrop(canvas) {
     if (u.uAccent)          gl.uniform3fv(u.uAccent, uniforms.accent);
     if (u.uAperturePos)     gl.uniform2fv(u.uAperturePos, uniforms.aperturePos);
     if (u.uApertureSize)    gl.uniform2fv(u.uApertureSize, uniforms.apertureSize);
+    if (u.uApertureRadius)  gl.uniform1f(u.uApertureRadius, uniforms.apertureRadius);
     if (u.uFlashIntensity)  gl.uniform1f(u.uFlashIntensity, uniforms.flash);
     if (u.uShake)           gl.uniform1f(u.uShake, uniforms.shake);
     if (u.uMode)            gl.uniform1i(u.uMode, uniforms.mode);

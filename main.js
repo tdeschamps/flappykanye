@@ -266,13 +266,21 @@ function render() {
     const c = chamberFor(state.score);
     const a1 = hexToVec3(c.from.a), a2 = hexToVec3(c.to.a);
     const b1 = hexToVec3(c.from.b), b2 = hexToVec3(c.to.b);
+    // Crossfade aperture geometry between chambers so the shape morphs gradually.
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const pos  = [lerp(c.from.pos[0],  c.to.pos[0],  c.t),
+                  lerp(c.from.pos[1],  c.to.pos[1],  c.t)];
+    const size = [lerp(c.from.size[0], c.to.size[0], c.t),
+                  lerp(c.from.size[1], c.to.size[1], c.t)];
+    const radius = lerp(c.from.radius, c.to.radius, c.t);
     shader.render({
       time: state.t,
       colorA: mixVec3(a1, a2, c.t),
       colorB: mixVec3(b1, b2, c.t),
       accent: hexToVec3(c.from.accent),
-      aperturePos: [0.5, 0.55],
-      apertureSize: [0.62, 0.42],
+      aperturePos: pos,
+      apertureSize: size,
+      apertureRadius: radius,
       flash: state.flash,
       shake: state.shake,
       mode: state.mode === 'idle' ? 0 : state.mode === 'playing' ? 1 : 2,
