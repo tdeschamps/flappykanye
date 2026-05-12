@@ -3,10 +3,103 @@ attribute vec2 aPos;
 void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 `;
 
-// Placeholder fragment shader — solid black. Task 8 replaces this.
 const FRAG = `
 precision mediump float;
-void main() { gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); }
+
+uniform float uTime;
+uniform vec2  uResolution;
+uniform vec3  uColorA;
+uniform vec3  uColorB;
+uniform vec3  uAccent;
+uniform vec2  uAperturePos;
+uniform vec2  uApertureSize;
+uniform float uFlashIntensity;
+uniform float uShake;
+uniform int   uMode;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+// Signed-distance to a rounded rectangle centered at c with half-size h and radius r.
+float sdRoundRect(vec2 p, vec2 c, vec2 h, float r) {
+  vec2 q = abs(p - c) - h + vec2(r);
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+vec3 fieldAt(vec2 uv, float t) {
+  // Drift the light center on a slow Lissajous so the field feels volumetric.
+  vec2 driftCenter = vec2(
+    0.5 + sin(t * 0.13) * 0.08,
+    0.55 + cos(t * 0.11) * 0.06
+  );
+  float d = distance(uv, driftCenter);
+  // Two layered radial falloffs combine into a softer, deeper field.
+  float r1 = smoothstep(0.0, 0.85, d);
+  float r2 = smoothstep(0.2, 1.05, d * 1.1);
+  float k = clamp((r1 * 0.6 + r2 * 0.4), 0.0, 1.0);
+  vec3 col = mix(uColorB, uColorA, k);
+
+  // Aperture: the iconic Turrell light rectangle.
+  vec2 apHalf = uApertureSize * 0.5;
+  float apJitter = sin(t * 0.4) * 0.005;
+  vec2 apCenter = uAperturePos + vec2(0.0, apJitter);
+  float sd = sdRoundRect(uv, apCenter, apHalf, 0.012);
+
+  // Cheap bloom — sample SDF at offsets, average to soften edges.
+  float glow = 0.0;
+  for (int i = 0; i < 4; i++) {
+    float a = float(i) * 1.5707963;
+    vec2 o = vec2(cos(a), sin(a)) * 0.006;
+    glow += smoothstep(0.05, -0.02, sdRoundRect(uv + o, apCenter, apHalf, 0.012));
+  }
+  glow *= 0.25;
+
+  float inside = smoothstep(0.0, -0.03, sd);
+  vec3 apertureInner = mix(uColorB, vec3(1.0), 0.12);
+  vec3 tinted = mix(apertureInner, uAccent, 0.55);
+
+  col = mix(col, tinted, inside * 0.85);
+  col += uAccent * glow * 0.6;
+
+  return col;
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / uResolution.xy;
+  // Map to 0..1 with y flipped to feel like screen space.
+  vec2 sUv = vec2(uv.x, 1.0 - uv.y);
+
+  // Subtle aperture shake from collisions.
+  sUv += vec2(
+    (hash21(sUv * 50.0 + uTime) - 0.5),
+    (hash21(sUv * 73.0 - uTime) - 0.5)
+  ) * (uShake / uResolution.y);
+
+  // Chromatic aberration — per-channel sample offsets scaled by distance from center.
+  vec2 center = vec2(0.5);
+  vec2 ca = (sUv - center) * 0.006;
+  vec3 col;
+  col.r = fieldAt(sUv + ca, uTime).r;
+  col.g = fieldAt(sUv,      uTime).g;
+  col.b = fieldAt(sUv - ca, uTime).b;
+
+  // Film grain.
+  float grain = (hash21(gl_FragCoord.xy + uTime) - 0.5) * 0.06;
+  col += grain;
+
+  // Vignette — soft corner darkening.
+  float vig = smoothstep(1.05, 0.35, length(sUv - center));
+  col *= mix(0.6, 1.0, vig);
+
+  // Death flash overlay — Yeezus blood red.
+  vec3 blood = vec3(0.72, 0.14, 0.11);
+  col = mix(col, blood, uFlashIntensity * 0.6);
+
+  gl_FragColor = vec4(col, 1.0);
+}
 `;
 
 function compile(gl, type, src) {
