@@ -314,8 +314,6 @@ function render() {
   drawTurrellBackdrop(drawPalette, state.t);
   drawForegroundType(drawPalette);
   for (const p of state.pipes) drawMonolith(p, drawPalette);
-  drawKanye(state.kanye, drawPalette);
-
   // Death flash — red Yeezus burst.
   if (state.flash > 0) {
     ctx.fillStyle = `rgba(184,35,28,${state.flash * 0.6})`;

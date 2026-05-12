@@ -9,6 +9,40 @@
 <body>
   <div id="stage">
     <canvas id="game" width="540" height="960"></canvas>
+    <svg id="kanye" class="kanye" viewBox="-40 -40 80 80" width="80" height="80" aria-hidden="true">
+  <g id="k-root">
+    <!-- back-to-front layers -->
+    <ellipse id="k-shadow" cx="2" cy="34" rx="22" ry="4" fill="rgba(0,0,0,0.35)"/>
+    <g id="k-body">
+      <path d="M -22 28 Q 0 44 22 28 L 22 38 L -22 38 Z" fill="#0a0a0a"/>
+    </g>
+    <g id="k-jaw" transform="translate(0 0)">
+      <ellipse cx="0" cy="14" rx="18" ry="10" fill="#8a5d3d"/>
+      <path id="k-mouth" d="M -8 14 Q 0 18 8 14" stroke="#3a1f0f" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    </g>
+    <g id="k-head">
+      <ellipse cx="0" cy="0" rx="27" ry="28" fill="#a8754f"/>
+      <ellipse cx="-26" cy="2" rx="3" ry="5" fill="#a8754f"/>
+      <ellipse cx="26" cy="2" rx="3" ry="5" fill="#a8754f"/>
+      <path d="M -2 4 Q 0 8 2 4" stroke="#7a4a2a" stroke-width="1.2" fill="none"/>
+    </g>
+    <g id="k-cap" transform="rotate(0)">
+      <path d="M -26 -10 A 26 18 0 0 1 26 -10 L 26 -6 L -26 -6 Z" fill="#0a0a0a"/>
+      <rect x="2" y="-10" width="28" height="4" fill="#0a0a0a"/>
+      <rect x="-24" y="-22" width="12" height="2" fill="#1a1a1a"/>
+    </g>
+    <g id="k-glasses">
+      <rect x="-22" y="-4" width="44" height="10" fill="#0a0a0a"/>
+      <g id="k-slats" stroke="#b8231c" stroke-width="1.2" stroke-linecap="round">
+        <line x1="-20" y1="-2"   x2="20" y2="-2"/>
+        <line x1="-20" y1="0.2"  x2="20" y2="0.2"/>
+        <line x1="-20" y1="2.4"  x2="20" y2="2.4"/>
+        <line x1="-20" y1="4.6"  x2="20" y2="4.6"/>
+      </g>
+      <rect id="k-glint" x="-22" y="-4" width="6" height="10" fill="rgba(255,255,255,0.45)" opacity="0"/>
+    </g>
+  </g>
+</svg>
     <div class="hud">
       <div class="top">
         <div>FLAPPY KANYE</div>
