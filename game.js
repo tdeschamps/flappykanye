@@ -1,11 +1,11 @@
 export const PHYSICS = {
   W: 540, H: 960,
-  GRAVITY: 1700,
-  FLAP: -520,
-  PIPE_GAP: 230,
+  GRAVITY: 1400,
+  FLAP: -460,
+  PIPE_GAP: 280,
   PIPE_W: 110,
-  PIPE_DX: 220,
-  PIPE_SPAWN: 1.45,
+  PIPE_DX: 190,
+  PIPE_SPAWN: 1.7,
   KANYE_X: 540 * 0.28,
   KANYE_R: 22,
 };

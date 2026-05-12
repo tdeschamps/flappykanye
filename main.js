@@ -279,6 +279,10 @@ function render() {
     });
   }
 
+  // When the shader owns the backdrop, the 2D canvas is transparent —
+  // clear it each frame so pipes don't smear across previous positions.
+  if (shader) ctx.clearRect(0, 0, W, H);
+
   ctx.save();
   if (state.shake > 0) {
     ctx.translate(
