@@ -2,6 +2,9 @@ import { CHAMBERS, chamberFor } from './chambers.js';
 import {
   PHYSICS, createGameState, resetGame, stepPhysics, stepDeath, flap as physicsFlap
 } from './game.js';
+import {
+  createKanyeRig, placeKanye, updateKanyeRig, triggerFlap, triggerScore, resetKanyeRig
+} from './kanye.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -13,6 +16,9 @@ const bestEl = document.getElementById('best');
 const chamberEl = document.getElementById('chamber');
 const overlay = document.getElementById('overlay');
 const deathChamberEl = document.getElementById('death-chamber');
+const stageEl = document.getElementById('stage');
+const kanyeSvg = document.getElementById('kanye');
+const kanyeRig = createKanyeRig(kanyeSvg);
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function hexToRgb(h) {
@@ -32,6 +38,7 @@ const PIPE_W = PHYSICS.PIPE_W;
 
 function reset() {
   resetGame(state);
+  resetKanyeRig(kanyeRig);
   scoreEl.textContent = '0';
   chamberEl.textContent = CHAMBERS[0].name;
 }
@@ -47,6 +54,7 @@ function flap() {
     overlay.classList.add('hidden');
     deathChamberEl.style.display = 'none';
   }
+  triggerFlap(kanyeRig);
   physicsFlap(state);
 }
 
@@ -176,82 +184,6 @@ function drawMonolith(p, palette) {
   ctx.restore();
 }
 
-function drawKanye(k, palette) {
-  // South Park-style Kanye: round flesh head, jaw, sunglasses, baseball cap.
-  ctx.save();
-  ctx.translate(k.x, k.y);
-  ctx.rotate(k.rot);
-
-  // Subtle bob shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.beginPath();
-  ctx.ellipse(2, 4, 28, 30, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Head — flesh tone
-  const head = '#a8754f';
-  ctx.fillStyle = head;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 26, 28, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Lower jaw block (South Park style — separate piece)
-  ctx.fillStyle = '#8a5d3d';
-  ctx.beginPath();
-  ctx.ellipse(0, 14, 18, 10, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Mouth line
-  ctx.strokeStyle = '#3a1f0f';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(-8, 14);
-  ctx.quadraticCurveTo(0, 18, 8, 14);
-  ctx.stroke();
-
-  // Baseball cap — Donda all-black
-  ctx.fillStyle = '#0a0a0a';
-  ctx.beginPath();
-  ctx.arc(0, -10, 26, Math.PI, 0);
-  ctx.fill();
-  ctx.fillRect(-26, -12, 52, 6);
-  // Brim
-  ctx.fillRect(2, -10, 28, 4);
-  // Cap highlight
-  ctx.fillStyle = '#222';
-  ctx.fillRect(-24, -22, 12, 2);
-
-  // Shutter shades — Yeezus / Glow in the Dark era
-  ctx.fillStyle = '#0a0a0a';
-  ctx.fillRect(-22, -4, 44, 10);
-  // Shutter slats
-  ctx.strokeStyle = palette ? rgbToCss(hexToRgb(palette.accent), 0.85) : '#b8231c';
-  ctx.lineWidth = 1.2;
-  for (let i = 0; i < 4; i++) {
-    const yy = -2 + i * 2.2;
-    ctx.beginPath();
-    ctx.moveTo(-20, yy);
-    ctx.lineTo(20, yy);
-    ctx.stroke();
-  }
-
-  // Tiny ears
-  ctx.fillStyle = head;
-  ctx.beginPath();
-  ctx.ellipse(-26, 2, 3, 5, 0, 0, Math.PI * 2);
-  ctx.ellipse(26, 2, 3, 5, 0, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Body sliver peeking out below the head (small wing-flap suggestion)
-  const flapPhase = Math.sin(state.t * 22);
-  ctx.fillStyle = '#0a0a0a';
-  ctx.beginPath();
-  ctx.ellipse(-18, 22 + flapPhase * 2, 10, 6, -0.4, 0, Math.PI * 2);
-  ctx.ellipse(18, 22 - flapPhase * 2, 10, 6, 0.4, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.restore();
-}
 
 function drawForegroundType(palette) {
   // Brutalist HUD elements drawn on the canvas — Yeezus tracklist energy.
@@ -270,13 +202,13 @@ function update(dt) {
   if (state.mode === 'idle') {
     state.kanye.y = H * 0.5 + Math.sin(state.t * 3) * 16;
     state.kanye.rot = Math.sin(state.t * 3) * 0.1;
-    return;
   }
   if (state.mode === 'playing') {
     const ev = stepPhysics(state, dt);
     if (ev === 'score') {
       scoreEl.textContent = String(state.score);
       chamberEl.textContent = chamberFor(state.score).from.name;
+      triggerScore(kanyeRig);
     } else if (ev === 'death') {
       die();
     }
@@ -286,6 +218,10 @@ function update(dt) {
   }
   if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 60);
   if (state.flash > 0) state.flash = Math.max(0, state.flash - dt * 2);
+  const palette = chamberFor(state.score);
+  const accent = palette.from.accent;
+  updateKanyeRig(kanyeRig, state, dt, accent);
+  placeKanye(kanyeRig, state.kanye, stageEl);
 }
 
 function render() {
