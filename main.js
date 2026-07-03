@@ -19,6 +19,8 @@ const deathChamberEl = document.getElementById('death-chamber');
 const stageEl = document.getElementById('stage');
 const bgCanvas = document.getElementById('bg');
 const shader = createShaderBackdrop(bgCanvas);
+// Honest degradation: no parallel renderer — a static CSS gradient (style.css).
+if (!shader) document.body.classList.add('no-webgl');
 const kanyeSvg = document.getElementById('kanye');
 const kanyeRig = createKanyeRig(kanyeSvg);
 
@@ -122,62 +124,21 @@ window.addEventListener('keydown', (e) => {
 canvas.addEventListener('pointerdown', onTap);
 overlay.addEventListener('pointerdown', onTap);
 
+// --- Debug (?debug): keys 1–7 jump to chamber boundaries, G to a late lap ---
+const DEBUG = new URLSearchParams(location.search).has('debug');
+if (DEBUG) {
+  window.addEventListener('keydown', (e) => {
+    let target = null;
+    if (e.key >= '1' && e.key <= '7') target = (Number(e.key) - 1) * 5;
+    if (e.key === 'g' || e.key === 'G') target = 30;
+    if (target === null) return;
+    state.score = target;
+    scoreEl.textContent = String(state.score);
+    chamberEl.textContent = chamberFor(state.score).from.name;
+  });
+}
+
 // --- Drawing ---
-function drawTurrellBackdrop(palette, time) {
-  const W = PHYSICS.W, H = PHYSICS.H;
-  // Soft radial light field — homage to Turrell's Ganzfeld effect.
-  const cx = W * (0.5 + Math.sin(time * 0.15) * 0.08);
-  const cy = H * (0.55 + Math.cos(time * 0.11) * 0.06);
-  const r0 = 20;
-  const r1 = Math.max(W, H) * 0.9;
-  const g = ctx.createRadialGradient(cx, cy, r0, cx, cy, r1);
-  const inner = mixHex(palette.to, palette.from, 0.0);
-  const outer = mixHex(palette.from, palette.to, 0.0);
-  g.addColorStop(0, rgbToCss(inner, 1));
-  g.addColorStop(0.55, rgbToCss(mixHex(palette.from, palette.to, 0.5), 1));
-  g.addColorStop(1, rgbToCss(outer, 1));
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
-
-  // Inner aperture — the iconic Turrell rectangle of pure color.
-  const apW = W * 0.62;
-  const apH = H * 0.42;
-  const apX = (W - apW) / 2;
-  const apY = (H - apH) / 2 + Math.sin(time * 0.4) * 6;
-  const ag = ctx.createLinearGradient(apX, apY, apX, apY + apH);
-  ag.addColorStop(0, rgbToCss(mixHex(palette.to, '#ffffff', 0.15), 0.55));
-  ag.addColorStop(1, rgbToCss(mixHex(palette.to, '#000000', 0.25), 0.55));
-  ctx.fillStyle = ag;
-  roundRect(apX, apY, apW, apH, 4);
-  ctx.fill();
-
-  // Faint horizon line — the brutalist division.
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fillRect(0, H * 0.78, W, 2);
-
-  // Film grain (very subtle).
-  if (Math.random() < 1) {
-    ctx.fillStyle = 'rgba(255,255,255,0.012)';
-    for (let i = 0; i < 40; i++) {
-      ctx.fillRect(Math.random()*W, Math.random()*H, 1, 1);
-    }
-  }
-}
-
-function roundRect(x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
 function drawMonolith(p, palette) {
   const H = PHYSICS.H, PIPE_W = PHYSICS.PIPE_W;
   // Brutalist Donda-black slab with a sharp bone-white edge.
@@ -223,19 +184,6 @@ function drawMonolith(p, palette) {
 }
 
 
-function drawForegroundType(palette) {
-  // Brutalist HUD elements drawn on the canvas — Yeezus tracklist energy.
-  ctx.save();
-  ctx.fillStyle = rgbToCss(hexToRgb(palette.accent), 0.18);
-  ctx.font = '900 220px Helvetica, Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  // Drift the watermark like Turrell light shifts.
-  const drift = Math.sin(state.t * 0.25) * 8;
-  ctx.fillText(String(state.score), PHYSICS.W / 2 + drift, PHYSICS.H * 0.34);
-  ctx.restore();
-}
-
 function update(dt) {
   if (state.mode === 'idle') {
     state.kanye.y = PHYSICS.H * 0.5 + Math.sin(state.t * 3) * 16;
@@ -265,26 +213,13 @@ function update(dt) {
 }
 
 function render() {
-  const { from, to, t } = chamberFor(state.score);
-  const palette = {
-    from: { ...from },
-    to:   { ...to },
-    accent: from.accent,
-  };
-  // Crossfade colors between chambers.
-  const blended = {
-    a: '#' + mixHex(from.a, to.a, t).map(v => Math.round(v).toString(16).padStart(2,'0')).join(''),
-    b: '#' + mixHex(from.b, to.b, t).map(v => Math.round(v).toString(16).padStart(2,'0')).join(''),
-    accent: from.accent,
-  };
-  const drawPalette = { from: blended.a, to: blended.b, accent: blended.accent };
+  const c = chamberFor(state.score);
+  const drawPalette = { accent: c.from.accent };
 
   if (shader) {
-    const c = chamberFor(state.score);
     const a1 = hexToVec3(c.from.a), a2 = hexToVec3(c.to.a);
     const b1 = hexToVec3(c.from.b), b2 = hexToVec3(c.to.b);
     // Crossfade aperture geometry between chambers so the shape morphs gradually.
-    const lerp = (a, b, t) => a + (b - a) * t;
     const pos  = [lerp(c.from.pos[0],  c.to.pos[0],  c.t),
                   lerp(c.from.pos[1],  c.to.pos[1],  c.t)];
     const size = [lerp(c.from.size[0], c.to.size[0], c.t),
@@ -300,13 +235,12 @@ function render() {
       apertureRadius: radius,
       flash: state.flash,
       shake: state.shake,
-      mode: state.mode === 'idle' ? 0 : state.mode === 'playing' ? 1 : 2,
     });
   }
 
-  // When the shader owns the backdrop, the 2D canvas is transparent —
-  // clear it each frame so pipes don't smear across previous positions.
-  if (shader) ctx.clearRect(0, 0, PHYSICS.W, PHYSICS.H);
+  // The 2D canvas is transparent over the backdrop — clear it each frame so
+  // pipes don't smear across previous positions.
+  ctx.clearRect(0, 0, PHYSICS.W, PHYSICS.H);
 
   ctx.save();
   if (state.shake > 0) {
@@ -316,8 +250,6 @@ function render() {
     );
   }
 
-  if (!shader) drawTurrellBackdrop(drawPalette, state.t);
-  if (!shader) drawForegroundType(drawPalette);
   for (const p of state.pipes) drawMonolith(p, drawPalette);
   // Death flash — red Yeezus burst.
   if (state.flash > 0) {

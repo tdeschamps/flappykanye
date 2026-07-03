@@ -17,7 +17,6 @@ uniform float uApertureRadius;
 uniform float uFlashIntensity;
 uniform float uShake;
 uniform float uAspect;
-uniform int   uMode;
 
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -159,7 +158,7 @@ export function createShaderBackdrop(canvas) {
   const uniformNames = [
     'uTime', 'uResolution', 'uColorA', 'uColorB', 'uAccent',
     'uAperturePos', 'uApertureSize', 'uApertureRadius',
-    'uFlashIntensity', 'uShake', 'uAspect', 'uMode',
+    'uFlashIntensity', 'uShake', 'uAspect',
   ];
   const u = {};
   for (const n of uniformNames) u[n] = gl.getUniformLocation(program, n);
@@ -193,7 +192,6 @@ export function createShaderBackdrop(canvas) {
     if (u.uFlashIntensity)  gl.uniform1f(u.uFlashIntensity, uniforms.flash);
     if (u.uShake)           gl.uniform1f(u.uShake, uniforms.shake);
     if (u.uAspect)          gl.uniform1f(u.uAspect, canvas.width / canvas.height);
-    if (u.uMode)            gl.uniform1i(u.uMode, uniforms.mode);
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }

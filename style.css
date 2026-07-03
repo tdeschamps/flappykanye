@@ -159,3 +159,7 @@
 }
 #bg { z-index: 0; }
 #game { z-index: 1; background: transparent; }
+
+/* Honest degradation when WebGL is unavailable: static Turrell-ish gradient. */
+.no-webgl #stage { background: radial-gradient(120% 90% at 50% 55%, #6e2bd1 0%, #1a0d2a 75%); }
+.no-webgl #bg { display: none; }

@@ -1,13 +1,5 @@
 import { PHYSICS } from './game.js';
 
-// Full-body PNG sprite (assets/kanye.png is 241×515). Rendered at a fixed logical
-// height with the collision point (kanye.x,y) aligned to the chest — the visual
-// center of mass — so flying feels fair against the round hitbox.
-const SPRITE_AR = 241 / 515;     // width / height of the source PNG
-const SPRITE_H = 132;            // sprite height in logical units
-const SPRITE_W = SPRITE_H * SPRITE_AR;
-const CHEST_FROM_TOP = 0.42;     // hitbox sits this far down the PNG figure
-
 // Face-only SVG sprite. viewBox is "-38 -134 76 84" (76 wide × 84 tall) cropping
 // the head. The face/eye center sits at SVG-y ≈ -92, i.e. (-92 - -134)/84 = 0.5.
 const SVG_VB_W = 76;
@@ -22,16 +14,13 @@ const PUPIL_R = { x: 2.4, y: -90 };
 const PUPIL_DART = 1.6;
 
 export function createKanyeRig(el) {
-  const isImg = el.tagName.toLowerCase() === 'img';
   return {
     root: el,
-    isImg,
-    // SVG sub-parts (null in PNG mode — updateKanyeRig guards on isImg)
-    jaw:     isImg ? null : el.querySelector('#k-jaw'),
-    cap:     isImg ? null : el.querySelector('#k-cap'),
-    eyes:    isImg ? null : el.querySelector('#k-eyes'),
-    pupilL:  isImg ? null : el.querySelector('#k-pupil-l'),
-    pupilR:  isImg ? null : el.querySelector('#k-pupil-r'),
+    jaw:     el.querySelector('#k-jaw'),
+    cap:     el.querySelector('#k-cap'),
+    eyes:    el.querySelector('#k-eyes'),
+    pupilL:  el.querySelector('#k-pupil-l'),
+    pupilR:  el.querySelector('#k-pupil-r'),
     // Animation state
     rot: 0,            // current whole-sprite rotation (deg)
     jawDrop: 0,        // 0..1, decays after flap; 1.0 on death (SVG only)
@@ -43,13 +32,12 @@ export function createKanyeRig(el) {
 export function placeKanye(rig, kanye, stageEl) {
   const scale = stageEl.clientHeight / PHYSICS.H;   // logical units → CSS px
 
-  // Sprite dimensions and chest alignment differ between PNG and SVG modes.
-  const bodyW = rig.isImg ? SPRITE_W : SVG_BODY_W;
-  const bodyH = rig.isImg ? SPRITE_H : SVG_BODY_H;
-  const chestFromTop = rig.isImg ? CHEST_FROM_TOP : SVG_FACE_FROM_TOP;
+  const bodyW = SVG_BODY_W;
+  const bodyH = SVG_BODY_H;
+  const chestFromTop = SVG_FACE_FROM_TOP;
 
-  // Center horizontally on kanye.x; align kanye.y to the chest. Whole-sprite
-  // tilt/spin (rig.rot) pivots about the chest for both modes.
+  // Center horizontally on kanye.x; align kanye.y to the face line. Whole-sprite
+  // tilt/spin (rig.rot) pivots about that point.
   const topLeftX = (kanye.x - bodyW / 2) * scale;
   const topLeftY = (kanye.y - bodyH * chestFromTop - rig.headBob) * scale;
   rig.root.style.width = `${(bodyW * scale).toFixed(2)}px`;
@@ -63,7 +51,7 @@ export function updateKanyeRig(rig, state, dt) {
   rig.jawDrop = Math.max(0, rig.jawDrop - dt * 4);
   rig.headBob = Math.max(0, rig.headBob - dt * 50);
 
-  // Whole-body rotation from velocity (shared by both sprite modes).
+  // Whole-body rotation from velocity.
   let rot;
   if (state.mode === 'idle') {
     rot = Math.sin(state.t * 3) * 6;
@@ -75,10 +63,6 @@ export function updateKanyeRig(rig, state, dt) {
     rot = Math.max(-30, Math.min(60, state.kanye.vy * 0.06));
   }
   rig.rot = rot;
-
-  // Whole-body tilt (rig.rot) is applied in placeKanye via the CSS transform on
-  // the root element — for both modes. The PNG has nothing else to animate.
-  if (rig.isImg) return;
 
   // Subtle idle head bob on the hair group.
   const capTilt = (state.mode === 'idle' ? Math.sin(state.t * 0.5) * 3 : 0);
