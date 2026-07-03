@@ -38,6 +38,8 @@ export function createGameState() {
     kanye: { x: PHYSICS.KANYE_X, y: PHYSICS.H * 0.5, vy: 0, rot: 0 },
     shake: 0,
     flash: 0,
+    graceT: 0,          // >0 = era-boundary breather, collisions ignored
+    transition: null,   // { t, dur } while a room rebuild is choreographed
     // Era physics targets — set and eased by main.js each frame so game.js
     // stays pure. Values are logical units (dx = px/s, gravity absolute).
     tuning: {
@@ -63,6 +65,8 @@ export function resetGame(state) {
   state.t = 0;
   state.shake = 0;
   state.flash = 0;
+  state.graceT = 0;
+  state.transition = null;
 }
 
 const GAP_MARGIN = 110;   // min distance from screen edges to a gap mouth
@@ -149,6 +153,14 @@ export function stepPhysics(state, dt) {
 
   const { kanye } = state;
   const r = PHYSICS.KANYE_R;
+
+  // Era-boundary grace: no deaths, just keep him inside the field.
+  if (state.graceT > 0) {
+    if (kanye.y - r < 0) { kanye.y = r; kanye.vy = Math.max(0, kanye.vy); }
+    if (kanye.y + r > PHYSICS.H) { kanye.y = PHYSICS.H - r; kanye.vy = Math.min(0, kanye.vy); }
+    return scored ? 'score' : null;
+  }
+
   if (kanye.y - r < 0 || kanye.y + r > PHYSICS.H) return 'death';
   for (const p of state.pipes) {
     if (kanye.x + r < p.x || kanye.x - r > p.x + PHYSICS.PIPE_W) continue;

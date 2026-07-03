@@ -16,6 +16,11 @@ const bestEl = document.getElementById('best');
 const chamberEl = document.getElementById('chamber');
 const overlay = document.getElementById('overlay');
 const deathChamberEl = document.getElementById('death-chamber');
+const stageEl = document.getElementById('stage');
+const eraCard = document.getElementById('era-card');
+const ecRoman = document.getElementById('ec-roman');
+const ecAlbum = document.getElementById('ec-album');
+const ecMeta = document.getElementById('ec-meta');
 const bgCanvas = document.getElementById('bg');
 const QUERY = new URLSearchParams(location.search);
 const DEBUG = QUERY.has('debug');
@@ -87,7 +92,9 @@ const visual = {
 
 function easeVisual(dt) {
   const { era } = eraFor(state.score);
-  const k = Math.min(1, dt * 2.8);
+  // Slow the ease during a choreographed transition so the room visibly
+  // rebuilds itself over ~1.6s instead of snapping.
+  const k = Math.min(1, dt * (state.transition ? 1.5 : 2.8));
   const to = (cur, target) => cur + (target - cur) * k;
   const toV = (cur, target) => { for (let i = 0; i < cur.length; i++) cur[i] = to(cur[i], target[i]); };
   toV(visual.a, hexToVec3(era.pal.a));
@@ -128,6 +135,23 @@ function reset() {
   resetKanye(kanye);
   scoreEl.textContent = '0';
   chamberEl.textContent = eraLabel(0);
+  eraCard.classList.add('hidden');
+  stageEl.style.setProperty('--era-accent', ERAS[0].pal.accent);
+}
+
+// Era-boundary choreography: spawn hold creates a pipe-free breath, grace
+// covers any leftover pipe, the card names the room, the eased visuals morph.
+function startEraTransition() {
+  const { era, lap } = eraFor(state.score);
+  state.transition = { t: 0, dur: 1.6 };
+  state.graceT = 2.1;
+  state.spawnTimer = Math.max(state.spawnTimer, 2.1);
+  ecRoman.textContent = lap > 0 ? `GOAT · LAP ${lap + 1} · ERA ${era.roman}` : `ERA ${era.roman}`;
+  ecAlbum.textContent = era.album;
+  ecMeta.textContent = `${era.year} · AFTER TURRELL: ${era.turrell}`;
+  eraCard.classList.remove('hidden');
+  stageEl.style.setProperty('--era-accent', era.pal.accent);
+  audio.chamber(eraFor(state.score).idx);
 }
 
 function flap() {
@@ -327,7 +351,7 @@ function update(dt) {
       chamberEl.textContent = eraLabel(state.score);
       triggerScore(kanye);
       audio.score(state.lastScoredGapY);
-      if (state.score % POINTS_PER_ERA === 0) audio.chamber(eraFor(state.score).idx);
+      if (state.score % POINTS_PER_ERA === 0) startEraTransition();
     } else if (ev === 'death') {
       die();
     }
@@ -337,6 +361,14 @@ function update(dt) {
   }
   if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 60);
   if (state.flash > 0) state.flash = Math.max(0, state.flash - dt * 2);
+  if (state.graceT > 0) state.graceT = Math.max(0, state.graceT - dt);
+  if (state.transition) {
+    state.transition.t += dt;
+    if (state.transition.t >= state.transition.dur) {
+      state.transition = null;
+      eraCard.classList.add('hidden');
+    }
+  }
   easeVisual(dt);
   updateKanye(kanye, state, dt);
 }
@@ -392,6 +424,18 @@ function render() {
       ctx.fillStyle = `rgba(232,228,218,${a})`;
       ctx.fillRect(px - r, py - r, r * 2, r * 2);
     }
+  }
+
+  // Boundary grace: a pulsing 1-texel ring around the sprite — "can't die yet".
+  if (state.graceT > 0 && state.mode === 'playing') {
+    const px = tx(state.kanye.x), py = tx(state.kanye.y);
+    const a = Math.max(0, 0.5 * Math.min(1, state.graceT) * (0.65 + 0.35 * Math.sin(state.t * 12)));
+    const r = 15;
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.fillRect(px - r, py - r, r * 2, 1);
+    ctx.fillRect(px - r, py + r - 1, r * 2, 1);
+    ctx.fillRect(px - r, py - r, 1, r * 2);
+    ctx.fillRect(px + r - 1, py - r, 1, r * 2);
   }
 
   drawKanye(ctx, kanye, state, TEX);
