@@ -217,6 +217,16 @@
   }
   .ego-chip.on { visibility: visible; }
 
+  /* Discography progress dots on the title screen. */
+  .era-dots { display: flex; gap: 8px; margin-top: 18px; }
+  .era-dot {
+    width: 9px;
+    height: 9px;
+    background: rgba(235,230,220,0.16);
+  }
+  .era-dot.filled { background: var(--bone); }
+  .era-dot.filled.goat { background: #ffd700; }
+
   /* Toast: short center-screen flash ("THE EGO HAS LANDED" etc). */
   .toast {
     position: absolute;

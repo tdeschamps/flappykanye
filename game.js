@@ -31,7 +31,7 @@ export function createGameState() {
     mode: 'idle',
     t: 0,
     score: 0,
-    best: parseInt(localStorage.getItem('flappykanye_best') || '0', 10),
+    best: 0,   // owned by main.js's save system
     pipes: [],
     spawnTimer: 0,
     spawnCount: 0,

@@ -76,7 +76,23 @@ function applyViewport() {
 
 applyViewport();
 
+// Persistence: one JSON blob. Migrates the legacy flat best-score key.
+function loadSave() {
+  try {
+    const s = JSON.parse(localStorage.getItem('flappykanye_save'));
+    if (s && s.v === 1) return s;
+  } catch (e) { /* corrupted — rebuild below */ }
+  const legacy = parseInt(localStorage.getItem('flappykanye_best') || '0', 10);
+  return { v: 1, best: legacy || 0, maxEraIdx: 0, goatLaps: 0, runs: 0 };
+}
+const save = loadSave();
+function persistSave() {
+  localStorage.setItem('flappykanye_save', JSON.stringify(save));
+  localStorage.removeItem('flappykanye_best');
+}
+
 const state = createGameState();
+state.best = save.best;
 bestEl.textContent = state.best;
 
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -85,6 +101,7 @@ const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // exponentially approaches the active era's targets every frame. Room morphs,
 // the death "rewind" to Dropout, and GOAT gold-washing all fall out of this
 // single mechanism — no per-feature tween code.
+const GOLD = hexToVec3('#ffd700');
 const E0 = ERAS[0];
 const visual = {
   a: hexToVec3(E0.pal.a),
@@ -100,15 +117,17 @@ const visual = {
 };
 
 function easeVisual(dt) {
-  const { era } = eraFor(state.score);
+  const { era, lap } = eraFor(state.score);
   // Slow the ease during a choreographed transition so the room visibly
   // rebuilds itself over ~1.6s instead of snapping.
   const k = Math.min(1, dt * (state.transition ? 1.5 : 2.8));
   const to = (cur, target) => cur + (target - cur) * k;
   const toV = (cur, target) => { for (let i = 0; i < cur.length; i++) cur[i] = to(cur[i], target[i]); };
+  // GOAT laps wash every accent 35% toward gold.
+  const accentT = lap > 0 ? mixVec3(hexToVec3(era.pal.accent), GOLD, 0.35) : hexToVec3(era.pal.accent);
   toV(visual.a, hexToVec3(era.pal.a));
   toV(visual.b, hexToVec3(era.pal.b));
-  toV(visual.accent, hexToVec3(era.pal.accent));
+  toV(visual.accent, accentT);
   toV(visual.pos, era.aperture.pos);
   toV(visual.size, era.aperture.size);
   visual.radius = to(visual.radius, era.aperture.radius);
@@ -118,10 +137,14 @@ function easeVisual(dt) {
   visual.fog = to(visual.fog, era.mood.fog);
 
   // Physics ease with the same clock, so difficulty ramps as the room morphs.
+  // GOAT laps multiply: faster, tighter, denser — with hard fairness floors.
+  const gGap = Math.max(200, era.physics.gap - 12 * lap);
+  const gSpeed = era.physics.speed * Math.min(1.6, 1 + 0.12 * lap);
+  const gSpawn = Math.max(1.0, era.physics.spawn * Math.pow(0.94, lap));
   const tn = state.tuning;
-  tn.gap = to(tn.gap, era.physics.gap);
-  tn.dx = to(tn.dx, era.physics.speed * PHYSICS.H);
-  tn.spawn = to(tn.spawn, era.physics.spawn);
+  tn.gap = to(tn.gap, gGap);
+  tn.dx = to(tn.dx, gSpeed * PHYSICS.H);
+  tn.spawn = to(tn.spawn, gSpawn);
   tn.gravity = to(tn.gravity, PHYSICS.GRAVITY * era.physics.gravityMul);
   state.obstacle = era.obstacle;
 }
@@ -157,13 +180,20 @@ function reset() {
 // Era-boundary choreography: spawn hold creates a pipe-free breath, grace
 // covers any leftover pipe, the card names the room, the eased visuals morph.
 function startEraTransition() {
-  const { era, lap } = eraFor(state.score);
+  const { era, idx: eIdx, lap } = eraFor(state.score);
   state.transition = { t: 0, dur: 1.6 };
   state.graceT = 2.1;
   state.spawnTimer = Math.max(state.spawnTimer, 2.1);
-  ecRoman.textContent = lap > 0 ? `GOAT · LAP ${lap + 1} · ERA ${era.roman}` : `ERA ${era.roman}`;
-  ecAlbum.textContent = era.album;
-  ecMeta.textContent = `${era.year} · AFTER TURRELL: ${era.turrell}`;
+  if (lap > 0 && eIdx === 0) {
+    // Crossing into a GOAT lap gets its own moment.
+    ecRoman.textContent = 'GREATEST OF ALL TIME';
+    ecAlbum.textContent = 'GOAT MODE';
+    ecMeta.textContent = `LAP ${lap + 1} · EVERYTHING FASTER · EVERYTHING GOLD`;
+  } else {
+    ecRoman.textContent = lap > 0 ? `GOAT · LAP ${lap + 1} · ERA ${era.roman}` : `ERA ${era.roman}`;
+    ecAlbum.textContent = era.album;
+    ecMeta.textContent = `${era.year} · AFTER TURRELL: ${era.turrell}`;
+  }
   eraCard.classList.remove('hidden');
   stageEl.style.setProperty('--era-accent', era.pal.accent);
   const { idx, lap: l } = eraFor(state.score);
@@ -177,6 +207,7 @@ function flap() {
     overlay.classList.add('hidden');
     deathBlock.style.display = 'none';
     music.setMode('playing');
+    save.runs++; persistSave();
   } else if (state.mode === 'dead') {
     // The death beat: quotes deserve 600ms of respect before a restart.
     if (state.deadT < 0.6) return;
@@ -186,12 +217,25 @@ function flap() {
     deathBlock.style.display = 'none';
     music.setEra(0, 0);
     music.setMode('playing');
+    save.runs++; persistSave();
   }
   triggerFlap(kanye);
   audio.init();
   music.start();
   audio.flap(eraFor(state.score).era.id === 'heartbreak', state.ego);
   physicsFlap(state);
+}
+
+// Title-screen discography progress: one dot per era, gold once GOAT reached.
+const eraDotsEl = document.getElementById('era-dots');
+function renderEraDots() {
+  eraDotsEl.innerHTML = '';
+  for (let i = 0; i < ERAS.length; i++) {
+    const d = document.createElement('span');
+    d.className = 'era-dot' + (i <= save.maxEraIdx ? ' filled' : '') + (save.goatLaps > 0 ? ' goat' : '');
+    d.title = ERAS[i].album;
+    eraDotsEl.appendChild(d);
+  }
 }
 
 let lastQuote = '';
@@ -228,6 +272,11 @@ function die() {
   deathQuote.textContent = `“${pickQuote(era, lap)}”`;
   deathStats.textContent = `SCORE ${state.score} · BEST ${state.best}`;
   promptEl.textContent = 'TAP TO RUN IT BACK';
+  save.best = Math.max(save.best, state.score);
+  save.maxEraIdx = Math.max(save.maxEraIdx, lap > 0 ? ERAS.length - 1 : eraFor(state.score).idx);
+  save.goatLaps = Math.max(save.goatLaps, lap);
+  persistSave();
+  renderEraDots();
   state.ego = 0;
   state.egoX2 = false;
   overlay.classList.remove('hidden');
@@ -334,14 +383,19 @@ function hash01(a, b) {
   return s - Math.floor(s);
 }
 
-function drawMonolith(p, era) {
+function mixRgb(a, b, t) {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+const GOLD_RGB = [255, 215, 0];
+
+function drawMonolith(p, era, goat) {
   let x = tx(p.x);
   const w = Math.max(2, tx(PHYSICS.PIPE_W));
   const topH = tx(p.gapY);
   const botY = tx(p.gapY + p.gapH);
   const botH = canvas.height - botY;
   const ink = era.pal.ink;
-  const rim = hexToRgb(era.pal.rim);
+  const rim = goat ? mixRgb(hexToRgb(era.pal.rim), GOLD_RGB, 0.5) : hexToRgb(era.pal.rim);
 
   // Yeezus: draw-only x snap every 1/3s — collision stays on the true x.
   if (p.kind === 'jitter') {
@@ -497,7 +551,8 @@ function update(dt) {
 }
 
 function render() {
-  const { era } = eraFor(state.score);
+  const { era, lap } = eraFor(state.score);
+  const goat = lap > 0;
 
   // Heartbeat pulse in the 808s room — phase from the audible bed.
   let pulse = 0;
@@ -537,7 +592,7 @@ function render() {
     );
   }
 
-  for (const p of state.pipes) drawMonolith(p, era);
+  for (const p of state.pipes) drawMonolith(p, era, goat);
 
   // Donda: a faint square halo so Kanye never vanishes into the void.
   if (era.id === 'donda') {
@@ -573,6 +628,17 @@ function render() {
   }
 
   drawKanye(ctx, kanye, state, TEX);
+
+  // GOAT halo: a floating gold pixel ring above the head.
+  if (goat && state.mode !== 'dead') {
+    const px = tx(state.kanye.x);
+    const py = tx(state.kanye.y) - 15 + Math.round(Math.sin(state.t * 3) * 1);
+    ctx.fillStyle = 'rgba(255,215,0,0.9)';
+    ctx.fillRect(px - 5, py, 10, 1);
+    ctx.fillRect(px - 6, py + 1, 1, 1);
+    ctx.fillRect(px + 5, py + 1, 1, 1);
+  }
+
   // Death flash — red Yeezus burst.
   if (state.flash > 0) {
     ctx.fillStyle = `rgba(184,35,28,${state.flash * 0.6})`;
@@ -610,4 +676,5 @@ window.addEventListener('resize', () => {
 });
 
 reset();
+renderEraDots();
 requestAnimationFrame((t) => { last = t; frame(t); });
