@@ -17,6 +17,11 @@ uniform float uApertureRadius;
 uniform float uFlashIntensity;
 uniform float uShake;
 uniform float uAspect;
+uniform float uGrain;       // film grain amount (era mood)
+uniform float uAberration;  // chromatic aberration radius (era mood)
+uniform float uGlitch;      // yeezus band-tear amount, 0..1+
+uniform float uFog;         // field falloff softness / glow richness
+uniform float uPulse;       // heartbeat brightness on the aperture (808s)
 
 float hash21(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
@@ -38,8 +43,10 @@ vec3 fieldAt(vec2 uv, float t) {
   );
   float d = distance(uv, driftCenter);
   // Two layered radial falloffs combine into a softer, deeper field.
-  float r1 = smoothstep(0.0, 0.85, d);
-  float r2 = smoothstep(0.2, 1.05, d * 1.1);
+  // uFog widens or tightens the falloff: high fog = soft luminous haze,
+  // low fog = hard clinical edges (808s, Yeezus).
+  float r1 = smoothstep(0.0, 0.45 + uFog * 0.5, d);
+  float r2 = smoothstep(0.2, 0.6 + uFog * 0.55, d * 1.1);
   float k = clamp((r1 * 0.6 + r2 * 0.4), 0.0, 1.0);
   vec3 col = mix(uColorB, uColorA, k);
 
@@ -70,9 +77,10 @@ vec3 fieldAt(vec2 uv, float t) {
   float inside = smoothstep(0.0, -0.03, sd);
   vec3 apertureInner = mix(uColorB, vec3(1.0), 0.12);
   vec3 tinted = mix(apertureInner, uAccent, 0.55);
+  tinted *= 1.0 + uPulse * 0.25;   // heartbeat brightening (808s)
 
   col = mix(col, tinted, inside * 0.85);
-  col += uAccent * glow * 0.6;
+  col += uAccent * glow * (0.25 + uFog * 0.45);
 
   return col;
 }
@@ -88,16 +96,24 @@ void main() {
     (hash21(sUv * 73.0 - uTime) - 0.5)
   ) * (uShake / uResolution.y);
 
+  // Yeezus band tear: horizontal uv rows shear sideways. Time is quantized to
+  // 3 steps/sec — the photosensitivity cap lives in the shader itself.
+  if (uGlitch > 0.001) {
+    float tq = floor(uTime * 3.0) / 3.0;
+    float band = floor(sUv.y * 12.0);
+    sUv.x += (hash21(vec2(band, tq)) - 0.5) * 0.03 * uGlitch;
+  }
+
   // Chromatic aberration — per-channel sample offsets scaled by distance from center.
   vec2 center = vec2(0.5);
-  vec2 ca = (sUv - center) * 0.006;
+  vec2 ca = (sUv - center) * uAberration * (1.0 + uGlitch);
   vec3 col;
   col.r = fieldAt(sUv + ca, uTime).r;
   col.g = fieldAt(sUv,      uTime).g;
   col.b = fieldAt(sUv - ca, uTime).b;
 
   // Film grain.
-  float grain = (hash21(gl_FragCoord.xy + uTime) - 0.5) * 0.06;
+  float grain = (hash21(gl_FragCoord.xy + uTime) - 0.5) * uGrain;
   col += grain;
 
   // Vignette — soft corner darkening.
@@ -164,6 +180,7 @@ export function createShaderBackdrop(canvas, opts = {}) {
     'uTime', 'uResolution', 'uColorA', 'uColorB', 'uAccent',
     'uAperturePos', 'uApertureSize', 'uApertureRadius',
     'uFlashIntensity', 'uShake', 'uAspect',
+    'uGrain', 'uAberration', 'uGlitch', 'uFog', 'uPulse',
   ];
   const u = {};
   for (const n of uniformNames) u[n] = gl.getUniformLocation(program, n);
@@ -197,6 +214,11 @@ export function createShaderBackdrop(canvas, opts = {}) {
     if (u.uFlashIntensity)  gl.uniform1f(u.uFlashIntensity, uniforms.flash);
     if (u.uShake)           gl.uniform1f(u.uShake, uniforms.shake);
     if (u.uAspect)          gl.uniform1f(u.uAspect, canvas.width / canvas.height);
+    if (u.uGrain)           gl.uniform1f(u.uGrain, uniforms.grain);
+    if (u.uAberration)      gl.uniform1f(u.uAberration, uniforms.aberration);
+    if (u.uGlitch)          gl.uniform1f(u.uGlitch, uniforms.glitch);
+    if (u.uFog)             gl.uniform1f(u.uFog, uniforms.fog);
+    if (u.uPulse)           gl.uniform1f(u.uPulse, uniforms.pulse);
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }

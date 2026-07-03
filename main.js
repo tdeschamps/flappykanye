@@ -65,6 +65,43 @@ applyViewport();
 const state = createGameState();
 bestEl.textContent = state.best;
 
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// The eased visual state: one object of current shader values that
+// exponentially approaches the active era's targets every frame. Room morphs,
+// the death "rewind" to Dropout, and GOAT gold-washing all fall out of this
+// single mechanism — no per-feature tween code.
+const E0 = ERAS[0];
+const visual = {
+  a: hexToVec3(E0.pal.a),
+  b: hexToVec3(E0.pal.b),
+  accent: hexToVec3(E0.pal.accent),
+  pos: [...E0.aperture.pos],
+  size: [...E0.aperture.size],
+  radius: E0.aperture.radius,
+  grain: E0.mood.grain,
+  aberration: E0.mood.aberration,
+  glitch: E0.mood.glitch,
+  fog: E0.mood.fog,
+};
+
+function easeVisual(dt) {
+  const { era } = eraFor(state.score);
+  const k = Math.min(1, dt * 2.8);
+  const to = (cur, target) => cur + (target - cur) * k;
+  const toV = (cur, target) => { for (let i = 0; i < cur.length; i++) cur[i] = to(cur[i], target[i]); };
+  toV(visual.a, hexToVec3(era.pal.a));
+  toV(visual.b, hexToVec3(era.pal.b));
+  toV(visual.accent, hexToVec3(era.pal.accent));
+  toV(visual.pos, era.aperture.pos);
+  toV(visual.size, era.aperture.size);
+  visual.radius = to(visual.radius, era.aperture.radius);
+  visual.grain = to(visual.grain, era.mood.grain);
+  visual.aberration = to(visual.aberration, era.mood.aberration);
+  visual.glitch = to(visual.glitch, REDUCED ? 0 : era.mood.glitch);
+  visual.fog = to(visual.fog, era.mood.fog);
+}
+
 function eraLabel(score) {
   const { era, lap } = eraFor(score);
   const goat = lap > 0 ? 'GOAT · ' : '';
@@ -98,7 +135,7 @@ function flap() {
 function die() {
   if (state.mode === 'dead') return;
   state.mode = 'dead';
-  state.shake = 22;
+  state.shake = REDUCED ? 10 : 22;
   state.flash = 1;
   audio.death();
   if (state.score > state.best) {
@@ -224,26 +261,38 @@ function update(dt) {
   }
   if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 60);
   if (state.flash > 0) state.flash = Math.max(0, state.flash - dt * 2);
+  easeVisual(dt);
   updateKanye(kanye, state, dt);
 }
 
 function render() {
-  // Eras are held pure — no continuous crossfade. (Step 5 adds the eased
-  // visual object that morphs between rooms during transitions.)
   const { era } = eraFor(state.score);
   const drawPalette = { accent: era.pal.accent };
+
+  // Heartbeat pulse: only alive in the 808s room (bed phase drives this
+  // properly once music.js lands; a 60bpm lub-dub shape for now).
+  let pulse = 0;
+  if (era.obstacle === 'pulse') {
+    const beat = state.t % 1;
+    pulse = Math.max(0, Math.sin(beat * Math.PI * 6)) * Math.max(0, 1 - beat * 2.2);
+  }
 
   if (shader) {
     shader.render({
       time: state.t,
-      colorA: hexToVec3(era.pal.a),
-      colorB: hexToVec3(era.pal.b),
-      accent: hexToVec3(era.pal.accent),
-      aperturePos: era.aperture.pos,
-      apertureSize: era.aperture.size,
-      apertureRadius: era.aperture.radius,
+      colorA: visual.a,
+      colorB: visual.b,
+      accent: visual.accent,
+      aperturePos: visual.pos,
+      apertureSize: visual.size,
+      apertureRadius: visual.radius,
       flash: state.flash,
       shake: state.shake,
+      grain: visual.grain,
+      aberration: visual.aberration,
+      glitch: visual.glitch,
+      fog: visual.fog,
+      pulse,
     });
   }
 
