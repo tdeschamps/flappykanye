@@ -6,6 +6,7 @@ import {
   createKanye, updateKanye, drawKanye, triggerFlap, triggerScore, resetKanye
 } from './kanye.js';
 import * as audio from './audio.js';
+import * as music from './music.js';
 import { createShaderBackdrop, hexToVec3, mixVec3 } from './shader.js';
 
 const canvas = document.getElementById('game');
@@ -151,7 +152,9 @@ function startEraTransition() {
   ecMeta.textContent = `${era.year} · AFTER TURRELL: ${era.turrell}`;
   eraCard.classList.remove('hidden');
   stageEl.style.setProperty('--era-accent', era.pal.accent);
-  audio.chamber(eraFor(state.score).idx);
+  const { idx, lap: l } = eraFor(state.score);
+  audio.eraSwell(idx);
+  music.setEra(idx, l);
 }
 
 function flap() {
@@ -159,15 +162,19 @@ function flap() {
     state.mode = 'playing';
     overlay.classList.add('hidden');
     deathChamberEl.style.display = 'none';
+    music.setMode('playing');
   } else if (state.mode === 'dead') {
     reset();
     state.mode = 'playing';
     overlay.classList.add('hidden');
     deathChamberEl.style.display = 'none';
+    music.setEra(0, 0);
+    music.setMode('playing');
   }
   triggerFlap(kanye);
   audio.init();
-  audio.flap();
+  music.start();
+  audio.flap(eraFor(state.score).era.id === 'heartbreak');
   physicsFlap(state);
 }
 
@@ -176,7 +183,8 @@ function die() {
   state.mode = 'dead';
   state.shake = REDUCED ? 10 : 22;
   state.flash = 1;
-  audio.death();
+  audio.death(eraFor(state.score).era.id);
+  music.setMode('idle');
   if (state.score > state.best) {
     state.best = state.score;
     localStorage.setItem('flappykanye_best', String(state.best));
@@ -237,6 +245,8 @@ if (DEBUG) {
     state.kanye.vy = 0;
   };
   window.__tick = (dt = 1 / 60) => { state.t += dt; update(dt); render(); };
+  window.__music = music;
+  window.__audio = audio;
   // Autopilot: play N frames steering toward the nearest gap center. Returns
   // mode:score so fairness checks can assert survival.
   window.__auto = (frames = 300) => {
@@ -340,6 +350,8 @@ function drawMonolith(p, era) {
 
 
 function update(dt) {
+  // The 808s pulse follows the audible heartbeat when the bed is running.
+  state.beatPhase = music.getPulsePhase() ?? (state.t % 1);
   if (state.mode === 'idle') {
     state.kanye.y = PHYSICS.H * 0.5 + Math.sin(state.t * 3) * 16;
     state.kanye.rot = Math.sin(state.t * 3) * 0.1;
@@ -350,7 +362,7 @@ function update(dt) {
       scoreEl.textContent = String(state.score);
       chamberEl.textContent = eraLabel(state.score);
       triggerScore(kanye);
-      audio.score(state.lastScoredGapY);
+      audio.score(state.lastScoredGapY, music.getScaleFreqs());
       if (state.score % POINTS_PER_ERA === 0) startEraTransition();
     } else if (ev === 'death') {
       die();
@@ -376,11 +388,10 @@ function update(dt) {
 function render() {
   const { era } = eraFor(state.score);
 
-  // Heartbeat pulse: only alive in the 808s room (bed phase drives this
-  // properly once music.js lands; a 60bpm lub-dub shape for now).
+  // Heartbeat pulse in the 808s room — phase from the audible bed.
   let pulse = 0;
   if (era.obstacle === 'pulse') {
-    const beat = state.t % 1;
+    const beat = state.beatPhase ?? (state.t % 1);
     pulse = Math.max(0, Math.sin(beat * Math.PI * 6)) * Math.max(0, 1 - beat * 2.2);
   }
 

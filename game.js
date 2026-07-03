@@ -108,8 +108,8 @@ function stepObstacles(state) {
     } else if (p.kind === 'drift') {
       p.gapY = p.baseGapY + Math.sin((state.t - p.born) * (Math.PI * 2 / 3.2) + p.seed) * 34;
     } else if (p.kind === 'pulse') {
-      // Gap breathes with the 60bpm heartbeat — deterministic from state.t.
-      const beat = state.t % 1;
+      // Gap breathes with the heartbeat (bed phase via main, state.t fallback).
+      const beat = state.beatPhase ?? (state.t % 1);
       const lub = Math.max(0, Math.sin(beat * Math.PI * 6)) * Math.max(0, 1 - beat * 2.2);
       p.gapH = p.baseGapH + lub * 14;
       p.gapY = p.baseGapY - lub * 7;

@@ -3,7 +3,7 @@ let masterGain = null;
 let preFx = null;
 let shaper = null;
 let convolver = null;
-let bedNodes = null;
+let musicBus = null;
 let muted = localStorage.getItem('flappykanye_muted') === '1';
 
 // Phrygian descending (E F G A B C D), wraps. Used to walk flap pitch.
@@ -62,28 +62,21 @@ function ensureCtx() {
   shaper.connect(convolver).connect(wet).connect(limiter);
   limiter.connect(masterGain).connect(ctx.destination);
 
-  startBed();
+  // Music bus: clean into the limiter (SFX keep the waveshaper grit; music
+  // doesn't want it), with a small send to the shared plate.
+  musicBus = ctx.createGain();
+  musicBus.gain.value = 0.8;
+  musicBus.connect(limiter);
+  const plateSend = ctx.createGain();
+  plateSend.gain.value = 0.10;
+  musicBus.connect(plateSend).connect(convolver);
+
   return ctx;
 }
 
-function startBed() {
-  const g = ctx.createGain();
-  g.gain.value = 0.04;
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass'; lp.frequency.value = 800; lp.Q.value = 0.6;
-
-  const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 55;
-  const o2 = ctx.createOscillator(); o2.type = 'sawtooth'; o2.frequency.value = 55.4;
-  o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(preFx);
-  o1.start(); o2.start();
-
-  const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07;
-  const lfoGain = ctx.createGain(); lfoGain.gain.value = 350;
-  lfo.connect(lfoGain).connect(lp.frequency);
-  lfo.start();
-
-  bedNodes = { o1, o2, lfo, g };
-}
+export function getCtx() { ensureCtx(); return ctx; }
+export function getMusicBus() { ensureCtx(); return musicBus; }
+export function getSfxBus() { ensureCtx(); return preFx; }
 
 export function init() {
   ensureCtx();
@@ -98,7 +91,9 @@ export function setMuted(m) {
 
 export function isMuted() { return muted; }
 
-export function flap() {
+// autotune=true (the 808s room) quantizes the sweep into hard pitch steps —
+// the T-Pain joke, one parameter deep.
+export function flap(autotune = false) {
   if (!ctx) ensureCtx();
   const now = ctx.currentTime;
   const root = PHRYGIAN[flapIdx % PHRYGIAN.length];
@@ -106,8 +101,15 @@ export function flap() {
 
   const osc = ctx.createOscillator();
   osc.type = 'sine';
-  osc.frequency.setValueAtTime(root * 2, now);
-  osc.frequency.exponentialRampToValueAtTime(root * 0.72, now + 0.12);
+  if (autotune) {
+    osc.frequency.setValueAtTime(root * 2, now);
+    osc.frequency.setValueAtTime(root * 1.5, now + 0.04);
+    osc.frequency.setValueAtTime(root * 1.12, now + 0.08);
+    osc.frequency.setValueAtTime(root * 0.75, now + 0.12);
+  } else {
+    osc.frequency.setValueAtTime(root * 2, now);
+    osc.frequency.exponentialRampToValueAtTime(root * 0.72, now + 0.12);
+  }
 
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, now);
@@ -119,11 +121,24 @@ export function flap() {
   osc.stop(now + 0.25);
 }
 
-export function score(gapY = 480) {
+// scale = current bed chord frequencies; when present, the clang is quantized
+// to the music instead of a free FM tone (gapY still picks the register).
+export function score(gapY = 480, scale = null) {
   if (!ctx) ensureCtx();
   const now = ctx.currentTime;
   const norm = Math.max(0, Math.min(1, gapY / 960));
-  const carrier = 600 + (1 - norm) * 500;
+  let carrier = 600 + (1 - norm) * 500;
+  if (scale && scale.length) {
+    let best = carrier, bd = Infinity;
+    for (const f of scale) {
+      for (const m of [2, 4, 8]) {
+        const c = f * m;
+        const d = Math.abs(c - carrier);
+        if (d < bd) { bd = d; best = c; }
+      }
+    }
+    carrier = best;
+  }
 
   const car = ctx.createOscillator();
   const mod = ctx.createOscillator();
@@ -144,7 +159,9 @@ export function score(gapY = 480) {
   car.stop(now + 0.2); mod.stop(now + 0.2);
 }
 
-export function chamber(idx) {
+// Era-boundary swell: the old chamber chord + a rising filtered-noise
+// crescendo underneath — marks the threshold while the room rebuilds.
+export function eraSwell(idx) {
   if (!ctx) ensureCtx();
   const now = ctx.currentTime;
   const roots = [98, 87, 73.4, 110, 82.4, 65.4, 55];
@@ -170,11 +187,44 @@ export function chamber(idx) {
     o.stop(now + 1.0);
   }
   filter.connect(g).connect(preFx);
+
+  // The riser: 1.2s of noise sweeping up into the boundary.
+  const len = Math.floor(ctx.sampleRate * 1.2);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (i / len);
+  const noise = ctx.createBufferSource(); noise.buffer = buf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.Q.value = 1.4;
+  bp.frequency.setValueAtTime(300, now);
+  bp.frequency.exponentialRampToValueAtTime(2800, now + 1.15);
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.0001, now);
+  ng.gain.exponentialRampToValueAtTime(0.16, now + 1.0);
+  ng.gain.exponentialRampToValueAtTime(0.0001, now + 1.25);
+  noise.connect(bp).connect(ng).connect(preFx);
+  noise.start(now); noise.stop(now + 1.3);
 }
 
-export function death() {
+// eraId flavors the crash: yeezus hits harder into the distortion, donda adds
+// a reverbed organ thud under the noise.
+export function death(eraId = '') {
   if (!ctx) ensureCtx();
   const now = ctx.currentTime;
+
+  if (eraId === 'donda') {
+    const o = ctx.createOscillator();
+    o.type = 'sine'; o.frequency.value = 58;
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, now);
+    og.gain.exponentialRampToValueAtTime(0.5, now + 0.02);
+    og.gain.exponentialRampToValueAtTime(0.0001, now + 1.4);
+    o.connect(og);
+    og.connect(convolver);
+    og.connect(preFx);
+    o.start(now); o.stop(now + 1.5);
+  }
+  const drive = eraId === 'yeezus' ? 1.5 : 1;
 
   const len = Math.floor(ctx.sampleRate * 0.7);
   const buf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -203,7 +253,7 @@ export function death() {
 
   const out = ctx.createGain();
   out.gain.setValueAtTime(0.0001, now);
-  out.gain.exponentialRampToValueAtTime(0.6, now + 0.01);
+  out.gain.exponentialRampToValueAtTime(0.6 * drive, now + 0.01);
   out.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
 
   sum.connect(out).connect(preFx);
