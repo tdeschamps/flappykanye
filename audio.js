@@ -91,12 +91,61 @@ export function setMuted(m) {
 
 export function isMuted() { return muted; }
 
-// autotune=true (the 808s room) quantizes the sweep into hard pitch steps —
-// the T-Pain joke, one parameter deep.
-export function flap(autotune = false) {
+// Record scratch — the "I'ma let you finish" interruption.
+export function scratch() {
   if (!ctx) ensureCtx();
   const now = ctx.currentTime;
-  const root = PHRYGIAN[flapIdx % PHRYGIAN.length];
+  const len = Math.floor(ctx.sampleRate * 0.25);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const noise = ctx.createBufferSource(); noise.buffer = buf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.Q.value = 2.5;
+  bp.frequency.setValueAtTime(2400, now);
+  bp.frequency.exponentialRampToValueAtTime(320, now + 0.22);
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.4, now);
+  ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+  noise.connect(bp).connect(ng).connect(preFx);
+  noise.start(now); noise.stop(now + 0.26);
+
+  const o = ctx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(760, now);
+  o.frequency.exponentialRampToValueAtTime(110, now + 0.3);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.12, now);
+  og.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+  o.connect(og).connect(preFx);
+  o.start(now); o.stop(now + 0.32);
+}
+
+// Metallic stab for Yeezus glitch takeovers.
+export function stab() {
+  if (!ctx) ensureCtx();
+  const now = ctx.currentTime;
+  const len = Math.floor(ctx.sampleRate * 0.07);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const noise = ctx.createBufferSource(); noise.buffer = buf;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = 3100; bp.Q.value = 9;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.22, now);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+  noise.connect(bp).connect(g).connect(preFx);
+  noise.start(now); noise.stop(now + 0.1);
+}
+
+// autotune=true (the 808s room) quantizes the sweep into hard pitch steps —
+// the T-Pain joke, one parameter deep. ego (0..1) raises the pitch: confidence
+// is audible.
+export function flap(autotune = false, ego = 0) {
+  if (!ctx) ensureCtx();
+  const now = ctx.currentTime;
+  const root = PHRYGIAN[flapIdx % PHRYGIAN.length] * (1 + ego * 0.5);
   flapIdx++;
 
   const osc = ctx.createOscillator();

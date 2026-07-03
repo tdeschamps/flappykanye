@@ -168,17 +168,20 @@ function compose(spr, state) {
   }
 }
 
-// Draw in texel space. tex = texels per logical unit.
+// Draw in texel space. tex = texels per logical unit. The ego inflates the
+// head — visual only, the hitbox never grows.
 export function drawKanye(ctx, spr, state, tex) {
   compose(spr, state);
 
   const px = Math.round(state.kanye.x * tex);
   const py = Math.round((state.kanye.y - spr.headBob) * tex);
   const q = Math.round(spr.rot / 15) * 15;   // quantized rotation — the 16-bit tell
+  const s = 1 + (state.ego || 0) * 0.18;
 
   ctx.save();
   ctx.translate(px, py);
   ctx.rotate(q * Math.PI / 180);
+  ctx.scale(s, s);
   ctx.drawImage(spr.frame, -ANCHOR_X, -ANCHOR_Y);
   ctx.restore();
 }

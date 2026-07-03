@@ -173,11 +173,77 @@
     pointer-events: none;
     z-index: 3;
   }
-  .death-chamber {
-    font-size: 14px;
-    letter-spacing: 0.35em;
+  /* Death moment: context, era quote, attribution, stats. */
+  .death-block { margin-top: 16px; max-width: 82vw; }
+  .death-context {
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.4em;
+    color: var(--era-accent, var(--blood));
+    text-transform: uppercase;
+  }
+  .death-quote {
+    margin-top: 10px;
+    font-size: clamp(18px, 3.4vw, 30px);
+    font-weight: 900;
+    font-style: italic;
+    line-height: 1.2;
+    text-transform: uppercase;
+    color: var(--bone);
+  }
+  .death-attr {
+    margin-top: 6px;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    opacity: 0.55;
+  }
+  .death-stats {
     margin-top: 14px;
-    color: var(--blood);
+    font-family: var(--pixel);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    opacity: 0.9;
+  }
+
+  /* Ego meter: hairline gold bar under the score + the ×2 chip. */
+  .ego-wrap { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .ego-track { width: 92px; height: 4px; background: rgba(235,230,220,0.18); }
+  .ego-bar { width: 0%; height: 100%; background: #f0c33c; }
+  .ego-chip {
+    font-family: var(--pixel);
+    font-size: 9px;
+    color: #f0c33c;
+    visibility: hidden;
+  }
+  .ego-chip.on { visibility: visible; }
+
+  /* Toast: short center-screen flash ("THE EGO HAS LANDED" etc). */
+  .toast {
+    position: absolute;
+    left: 50%;
+    top: 26%;
+    transform: translateX(-50%);
+    font-weight: 900;
+    font-size: clamp(16px, 3vw, 26px);
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--era-accent, var(--bone));
+    mix-blend-mode: difference;
+    z-index: 4;
+    pointer-events: none;
+    transition: opacity 250ms ease;
+  }
+  .toast.hidden { opacity: 0; }
+
+  /* Yeezus takeover: the HUD itself tears for a third of a second. */
+  .hud.glitch { animation: hud-tear 0.36s steps(3) both; }
+  @keyframes hud-tear {
+    0%   { transform: translate(3px, -2px); clip-path: inset(0 0 12% 0); }
+    50%  { transform: translate(-4px, 1px); clip-path: inset(8% 0 0 0); }
+    100% { transform: translate(0, 0); clip-path: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hud.glitch { animation: none; }
   }
 .mute-btn {
   background: transparent;

@@ -40,6 +40,9 @@ export function createGameState() {
     flash: 0,
     graceT: 0,          // >0 = era-boundary breather, collisions ignored
     transition: null,   // { t, dur } while a room rebuild is choreographed
+    ego: 0,             // 0..1 — clean passes inflate it, time deflates it
+    egoX2: false,       // full ego = double score until it decays below 0.9
+    deadT: 0,           // seconds since death (restart lockout)
     // Era physics targets — set and eased by main.js each frame so game.js
     // stays pure. Values are logical units (dx = px/s, gravity absolute).
     tuning: {
@@ -67,6 +70,9 @@ export function resetGame(state) {
   state.flash = 0;
   state.graceT = 0;
   state.transition = null;
+  state.ego = 0;
+  state.egoX2 = false;
+  state.deadT = 0;
 }
 
 const GAP_MARGIN = 110;   // min distance from screen edges to a gap mouth
@@ -144,11 +150,19 @@ export function stepPhysics(state, dt) {
     p.x -= state.tuning.dx * dt;
     if (!p.passed && p.x + PHYSICS.PIPE_W < state.kanye.x - PHYSICS.KANYE_R) {
       p.passed = true;
-      state.score += 1;
+      // Pass quality feeds the ego: dead-center third is a clean pass,
+      // scraping an edge barely counts. Full ego doubles the score.
+      const quality = Math.abs((p.gapY + p.gapH / 2) - state.kanye.y) / (p.gapH / 2);
+      state.ego = Math.min(1, state.ego + (quality < 0.33 ? 0.16 : quality > 0.75 ? 0.04 : 0.09));
+      if (state.ego >= 1) state.egoX2 = true;
+      state.score += state.egoX2 ? 2 : 1;
       state.lastScoredGapY = p.gapY;
       scored = true;
     }
   }
+  // Ego deflates with time; ×2 holds until it sags below 0.9.
+  state.ego = Math.max(0, state.ego - 0.03 * dt);
+  if (state.egoX2 && state.ego < 0.9) state.egoX2 = false;
   state.pipes = state.pipes.filter(p => p.x + PHYSICS.PIPE_W > -40);
 
   const { kanye } = state;

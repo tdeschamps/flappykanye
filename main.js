@@ -1,4 +1,4 @@
-import { ERAS, POINTS_PER_ERA, eraFor } from './eras.js';
+import { ERAS, POINTS_PER_ERA, GOAT_QUOTES, eraFor } from './eras.js';
 import {
   PHYSICS, recomputeDims, createGameState, resetGame, stepPhysics, stepDeath, flap as physicsFlap
 } from './game.js';
@@ -16,7 +16,15 @@ const scoreEl = document.getElementById('score');
 const bestEl = document.getElementById('best');
 const chamberEl = document.getElementById('chamber');
 const overlay = document.getElementById('overlay');
-const deathChamberEl = document.getElementById('death-chamber');
+const deathBlock = document.getElementById('death-block');
+const deathContext = document.getElementById('death-context');
+const deathQuote = document.getElementById('death-quote');
+const deathStats = document.getElementById('death-stats');
+const promptEl = document.getElementById('prompt');
+const egoBar = document.getElementById('ego-bar');
+const egoChip = document.getElementById('ego-chip');
+const toastEl = document.getElementById('toast');
+const hudEl = document.querySelector('.hud');
 const stageEl = document.getElementById('stage');
 const eraCard = document.getElementById('era-card');
 const ecRoman = document.getElementById('ec-roman');
@@ -138,6 +146,12 @@ function reset() {
   chamberEl.textContent = eraLabel(0);
   eraCard.classList.add('hidden');
   stageEl.style.setProperty('--era-accent', ERAS[0].pal.accent);
+  lastEraKey = 0;
+  interruptFired = false;
+  egoToastFired = false;
+  takeoverNext = 7;
+  takeoverT = 0;
+  state.slowmoT = 0;
 }
 
 // Era-boundary choreography: spawn hold creates a pipe-free breath, grace
@@ -161,37 +175,63 @@ function flap() {
   if (state.mode === 'idle') {
     state.mode = 'playing';
     overlay.classList.add('hidden');
-    deathChamberEl.style.display = 'none';
+    deathBlock.style.display = 'none';
     music.setMode('playing');
   } else if (state.mode === 'dead') {
+    // The death beat: quotes deserve 600ms of respect before a restart.
+    if (state.deadT < 0.6) return;
     reset();
     state.mode = 'playing';
     overlay.classList.add('hidden');
-    deathChamberEl.style.display = 'none';
+    deathBlock.style.display = 'none';
     music.setEra(0, 0);
     music.setMode('playing');
   }
   triggerFlap(kanye);
   audio.init();
   music.start();
-  audio.flap(eraFor(state.score).era.id === 'heartbreak');
+  audio.flap(eraFor(state.score).era.id === 'heartbreak', state.ego);
   physicsFlap(state);
+}
+
+let lastQuote = '';
+function pickQuote(era, lap) {
+  const pool = lap > 0 ? [...era.quotes, ...GOAT_QUOTES] : era.quotes;
+  let q = pool[Math.floor(Math.random() * pool.length)];
+  if (q === lastQuote) q = pool[(pool.indexOf(q) + 1) % pool.length];
+  lastQuote = q;
+  return q;
+}
+
+let toastT = 0;
+function toast(msg, dur = 1.6) {
+  toastEl.textContent = msg;
+  toastEl.classList.remove('hidden');
+  toastT = dur;
 }
 
 function die() {
   if (state.mode === 'dead') return;
   state.mode = 'dead';
+  state.deadT = 0;
   state.shake = REDUCED ? 10 : 22;
   state.flash = 1;
-  audio.death(eraFor(state.score).era.id);
+  const { era, lap } = eraFor(state.score);
+  audio.death(era.id);
   music.setMode('idle');
   if (state.score > state.best) {
     state.best = state.score;
     localStorage.setItem('flappykanye_best', String(state.best));
     bestEl.textContent = state.best;
   }
+  deathContext.textContent = `YOU DIED IN: ${era.album}, ${era.year}`;
+  deathQuote.textContent = `“${pickQuote(era, lap)}”`;
+  deathStats.textContent = `SCORE ${state.score} · BEST ${state.best}`;
+  promptEl.textContent = 'TAP TO RUN IT BACK';
+  state.ego = 0;
+  state.egoX2 = false;
   overlay.classList.remove('hidden');
-  deathChamberEl.style.display = 'block';
+  deathBlock.style.display = 'block';
 }
 
 // --- Input ---
@@ -243,17 +283,20 @@ if (DEBUG) {
     state.spawnTimer = 0.6;
     state.kanye.y = PHYSICS.H * 0.45;
     state.kanye.vy = 0;
+    const ek = eraFor(state.score);
+    lastEraKey = ek.idx + ek.lap * ERAS.length;
   };
   window.__tick = (dt = 1 / 60) => { state.t += dt; update(dt); render(); };
   window.__music = music;
   window.__audio = audio;
+  window.__die = () => { if (state.mode === 'playing') die(); return state.mode; };
   // Autopilot: play N frames steering toward the nearest gap center. Returns
   // mode:score so fairness checks can assert survival.
   window.__auto = (frames = 300) => {
     if (state.mode !== 'playing') {
       state.mode = 'playing';
       overlay.classList.add('hidden');
-      deathChamberEl.style.display = 'none';
+      deathBlock.style.display = 'none';
     }
     for (let i = 0; i < frames; i++) {
       let target = PHYSICS.H * 0.5;
@@ -349,6 +392,13 @@ function drawMonolith(p, era) {
 }
 
 
+let lastEraKey = 0;
+let interruptFired = false;
+let interruptCardT = 0;
+let egoToastFired = false;
+let takeoverNext = 7;
+let takeoverT = 0;
+
 function update(dt) {
   // The 808s pulse follows the audible heartbeat when the bed is running.
   state.beatPhase = music.getPulsePhase() ?? (state.t % 1);
@@ -363,14 +413,75 @@ function update(dt) {
       chamberEl.textContent = eraLabel(state.score);
       triggerScore(kanye);
       audio.score(state.lastScoredGapY, music.getScaleFreqs());
-      if (state.score % POINTS_PER_ERA === 0) startEraTransition();
+
+      // Era boundary — detected by index change, not modulo, because ×2
+      // scoring can step over the exact multiple.
+      const ek = eraFor(state.score);
+      const key = ek.idx + ek.lap * ERAS.length;
+      if (key !== lastEraKey) {
+        lastEraKey = key;
+        startEraTransition();
+      }
+
+      // Ego landed: announce once per run.
+      if (state.egoX2 && !egoToastFired) {
+        egoToastFired = true;
+        toast('THE EGO HAS LANDED — ×2');
+      }
+
+      // "I'ma let you finish": the first time this run beats the saved best.
+      if (!interruptFired && state.best >= 10 && state.score > state.best) {
+        interruptFired = true;
+        state.slowmoT = 1.2;
+        interruptCardT = 2.0;
+        ecRoman.textContent = 'YO — ';
+        ecAlbum.textContent = "I'MA LET YOU FINISH";
+        ecMeta.textContent = 'BUT THIS IS ONE OF THE BEST RUNS OF ALL TIME';
+        eraCard.classList.remove('hidden');
+        audio.scratch();
+      }
     } else if (ev === 'death') {
       die();
     }
+
+    // Yeezus glitch takeover — era V only, never under reduced motion.
+    const { era } = eraFor(state.score);
+    if (era.id === 'yeezus' && !REDUCED) {
+      takeoverNext -= dt;
+      if (takeoverNext <= 0 && takeoverT <= 0) {
+        takeoverT = 0.4;
+        takeoverNext = 6 + Math.random() * 3;
+        visual.glitch = 2.2;
+        visual.pos[0] += (Math.random() - 0.5) * 0.16;   // aperture snaps; ease recovers
+        hudEl.classList.add('glitch');
+        scoreEl.textContent = 'YZY';
+        audio.stab();
+      }
+      if (takeoverT > 0) {
+        takeoverT -= dt;
+        if (takeoverT <= 0) {
+          hudEl.classList.remove('glitch');
+          scoreEl.textContent = String(state.score);
+        }
+      }
+    }
   }
   if (state.mode === 'dead') {
+    state.deadT += dt;
     stepDeath(state, dt);
   }
+
+  // Timers for the DOM moments.
+  if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.add('hidden'); }
+  if (interruptCardT > 0) {
+    interruptCardT -= dt;
+    if (interruptCardT <= 0 && !state.transition) eraCard.classList.add('hidden');
+  }
+
+  // Ego HUD.
+  egoBar.style.width = `${Math.round(state.ego * 100)}%`;
+  egoChip.classList.toggle('on', state.egoX2);
+  if (!state.egoX2 && state.ego < 0.05) egoToastFired = false;
   if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 60);
   if (state.flash > 0) state.flash = Math.max(0, state.flash - dt * 2);
   if (state.graceT > 0) state.graceT = Math.max(0, state.graceT - dt);
@@ -437,6 +548,18 @@ function render() {
     }
   }
 
+  // Gold ego aura: a ring that thickens as the head inflates.
+  if (state.ego > 0.15 && state.mode === 'playing') {
+    const px = tx(state.kanye.x), py = tx(state.kanye.y);
+    const a = 0.35 * state.ego;
+    const r = 13 + Math.round(state.ego * 4);
+    ctx.fillStyle = `rgba(240,195,60,${a})`;
+    ctx.fillRect(px - r, py - r, r * 2, 1);
+    ctx.fillRect(px - r, py + r - 1, r * 2, 1);
+    ctx.fillRect(px - r, py - r, 1, r * 2);
+    ctx.fillRect(px + r - 1, py - r, 1, r * 2);
+  }
+
   // Boundary grace: a pulsing 1-texel ring around the sprite — "can't die yet".
   if (state.graceT > 0 && state.mode === 'playing') {
     const px = tx(state.kanye.x), py = tx(state.kanye.y);
@@ -462,8 +585,11 @@ function render() {
 // Kick off
 let last = performance.now();
 function frame(now) {
-  const dtRaw = (now - last) / 1000;
-  const dt = Math.min(dtRaw, 1 / 30);
+  const dtRaw = Math.min((now - last) / 1000, 1 / 30);
+  // Slow-mo during the finish interruption — everything breathes at 0.3×.
+  // The slow-mo clock itself runs on real time.
+  if (state.slowmoT > 0) state.slowmoT -= dtRaw;
+  const dt = dtRaw * (state.slowmoT > 0 ? 0.3 : 1);
   last = now;
   state.t += dt;
 
