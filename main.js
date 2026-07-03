@@ -3,7 +3,7 @@ import {
   PHYSICS, recomputeDims, createGameState, resetGame, stepPhysics, stepDeath, flap as physicsFlap
 } from './game.js';
 import {
-  createKanyeRig, placeKanye, updateKanyeRig, triggerFlap, triggerScore, resetKanyeRig
+  createKanye, updateKanye, drawKanye, triggerFlap, triggerScore, resetKanye
 } from './kanye.js';
 import * as audio from './audio.js';
 import { createShaderBackdrop, hexToVec3, mixVec3 } from './shader.js';
@@ -16,13 +16,11 @@ const bestEl = document.getElementById('best');
 const chamberEl = document.getElementById('chamber');
 const overlay = document.getElementById('overlay');
 const deathChamberEl = document.getElementById('death-chamber');
-const stageEl = document.getElementById('stage');
 const bgCanvas = document.getElementById('bg');
 const shader = createShaderBackdrop(bgCanvas);
 // Honest degradation: no parallel renderer — a static CSS gradient (style.css).
 if (!shader) document.body.classList.add('no-webgl');
-const kanyeSvg = document.getElementById('kanye');
-const kanyeRig = createKanyeRig(kanyeSvg);
+const kanye = createKanye();
 
 const muteBtn = document.getElementById('mute-btn');
 muteBtn.textContent = audio.isMuted() ? 'SOUND OFF' : 'SOUND ON';
@@ -38,19 +36,19 @@ function hexToRgb(h) {
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
 }
 function rgbToCss([r,g,b], a=1) { return `rgba(${r|0},${g|0},${b|0},${a})`; }
-function mixHex(h1, h2, t) {
-  const a = hexToRgb(h1), b = hexToRgb(h2);
-  return [lerp(a[0],b[0],t), lerp(a[1],b[1],t), lerp(a[2],b[2],t)];
-}
 
-// Size the 2D canvas backing store to the playfield × devicePixelRatio, then map
-// the logical W×H coordinate space onto it via setTransform so every draw call
-// keeps working in logical units regardless of viewport size or DPR.
+// Hi-bit split: the game canvas renders at quarter resolution (240 texels tall)
+// and CSS upscales it with nearest-neighbor, so monoliths and Kanye read as
+// chunky 16-bit objects floating in the smooth full-res Turrell light behind.
+const PIXEL_H = 240;
+const TEX = PIXEL_H / PHYSICS.H;          // texels per logical unit
+const tx = (v) => Math.round(v * TEX);    // logical → texel
+
 function sizeGameCanvas() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.round(PHYSICS.W * dpr);
-  canvas.height = Math.round(PHYSICS.H * dpr);
-  ctx.setTransform(canvas.width / PHYSICS.W, 0, 0, canvas.height / PHYSICS.H, 0, 0);
+  canvas.width = Math.max(1, tx(PHYSICS.W));
+  canvas.height = PIXEL_H;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = false;
 }
 
 // Recompute dims for the current viewport and resize the 2D canvas. The WebGL
@@ -67,7 +65,7 @@ bestEl.textContent = state.best;
 
 function reset() {
   resetGame(state);
-  resetKanyeRig(kanyeRig);
+  resetKanye(kanye);
   scoreEl.textContent = '0';
   chamberEl.textContent = CHAMBERS[0].name;
 }
@@ -83,7 +81,7 @@ function flap() {
     overlay.classList.add('hidden');
     deathChamberEl.style.display = 'none';
   }
-  triggerFlap(kanyeRig);
+  triggerFlap(kanye);
   audio.init();
   audio.flap();
   physicsFlap(state);
@@ -138,49 +136,35 @@ if (DEBUG) {
   });
 }
 
-// --- Drawing ---
+// --- Drawing (texel space) ---
 function drawMonolith(p, palette) {
-  const H = PHYSICS.H, PIPE_W = PHYSICS.PIPE_W;
-  // Brutalist Donda-black slab with a sharp bone-white edge.
-  const topH = p.gapY;
-  const botY = p.gapY + p.gapH;
-  const botH = H - botY;
+  const x = tx(p.x);
+  const w = Math.max(2, tx(PHYSICS.PIPE_W));
+  const topH = tx(p.gapY);
+  const botY = tx(p.gapY + p.gapH);
+  const botH = canvas.height - botY;
+  const accent = hexToRgb(palette.accent);
 
-  const slabFill = '#0a0a0a';
-  const edge = mixHex(palette.accent, '#ffffff', 0.2);
+  // Chunky slab body with a subtle left bevel.
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(x, 0, w, topH);
+  ctx.fillRect(x, botY, w, botH);
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.fillRect(x, 0, 1, topH);
+  ctx.fillRect(x, botY, 1, botH);
 
-  ctx.fillStyle = slabFill;
-  ctx.fillRect(p.x, 0, PIPE_W, topH);
-  ctx.fillRect(p.x, botY, PIPE_W, botH);
+  // 1-texel accent rim on the lit (right) edge.
+  ctx.fillStyle = rgbToCss(accent, 0.9);
+  ctx.fillRect(x + w - 1, 0, 1, topH);
+  ctx.fillRect(x + w - 1, botY, 1, botH);
 
-  // Inner light bleed where the gap opens — Turrell aperture light spilling out.
-  const bleedH = 14;
-  const bg = ctx.createLinearGradient(p.x, p.gapY - bleedH, p.x, p.gapY);
-  bg.addColorStop(0, 'rgba(0,0,0,0)');
-  bg.addColorStop(1, rgbToCss(hexToRgb(palette.accent), 0.55));
-  ctx.fillStyle = bg;
-  ctx.fillRect(p.x, p.gapY - bleedH, PIPE_W, bleedH);
-
-  const bg2 = ctx.createLinearGradient(p.x, botY, p.x, botY + bleedH);
-  bg2.addColorStop(0, rgbToCss(hexToRgb(palette.accent), 0.55));
-  bg2.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = bg2;
-  ctx.fillRect(p.x, botY, PIPE_W, bleedH);
-
-  // Hard right edge highlight.
-  ctx.fillStyle = rgbToCss(edge, 0.9);
-  ctx.fillRect(p.x + PIPE_W - 2, 0, 2, topH);
-  ctx.fillRect(p.x + PIPE_W - 2, botY, 2, botH);
-
-  // Industrial yeezus serial number on each slab.
-  ctx.save();
-  ctx.fillStyle = 'rgba(235,230,220,0.45)';
-  ctx.font = '900 11px Helvetica, Arial, sans-serif';
-  ctx.translate(p.x + PIPE_W / 2, topH - 14);
-  ctx.rotate(-Math.PI / 2);
-  ctx.textAlign = 'left';
-  ctx.fillText('YZS · 06 · ' + (p.gapY|0), 0, 4);
-  ctx.restore();
+  // Gap mouths: hard 1-texel light line + a dimmer step — pixel bloom.
+  ctx.fillStyle = rgbToCss(accent, 0.85);
+  ctx.fillRect(x, topH - 1, w, 1);
+  ctx.fillRect(x, botY, w, 1);
+  ctx.fillStyle = rgbToCss(accent, 0.3);
+  ctx.fillRect(x, topH - 2, w, 1);
+  ctx.fillRect(x, botY + 1, w, 1);
 }
 
 
@@ -194,7 +178,7 @@ function update(dt) {
     if (ev === 'score') {
       scoreEl.textContent = String(state.score);
       chamberEl.textContent = chamberFor(state.score).from.name;
-      triggerScore(kanyeRig);
+      triggerScore(kanye);
       audio.score(state.lastScoredGapY);
       if (state.score % 5 === 0) audio.chamber(chamberFor(state.score).idx);
     } else if (ev === 'death') {
@@ -206,10 +190,7 @@ function update(dt) {
   }
   if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 60);
   if (state.flash > 0) state.flash = Math.max(0, state.flash - dt * 2);
-  const palette = chamberFor(state.score);
-  const accent = palette.from.accent;
-  updateKanyeRig(kanyeRig, state, dt, accent);
-  placeKanye(kanyeRig, state.kanye, stageEl);
+  updateKanye(kanye, state, dt);
 }
 
 function render() {
@@ -240,21 +221,22 @@ function render() {
 
   // The 2D canvas is transparent over the backdrop — clear it each frame so
   // pipes don't smear across previous positions.
-  ctx.clearRect(0, 0, PHYSICS.W, PHYSICS.H);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   ctx.save();
   if (state.shake > 0) {
     ctx.translate(
-      (Math.random() - 0.5) * state.shake,
-      (Math.random() - 0.5) * state.shake
+      Math.round((Math.random() - 0.5) * state.shake * TEX),
+      Math.round((Math.random() - 0.5) * state.shake * TEX)
     );
   }
 
   for (const p of state.pipes) drawMonolith(p, drawPalette);
+  drawKanye(ctx, kanye, state, TEX);
   // Death flash — red Yeezus burst.
   if (state.flash > 0) {
     ctx.fillStyle = `rgba(184,35,28,${state.flash * 0.6})`;
-    ctx.fillRect(0, 0, PHYSICS.W, PHYSICS.H);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
   ctx.restore();

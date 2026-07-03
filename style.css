@@ -1,7 +1,13 @@
+  @font-face {
+    font-family: 'Press Start 2P';
+    src: url('assets/fonts/press-start-2p.woff2') format('woff2');
+    font-display: block;
+  }
   :root {
     --ink: #0a0a0a;
     --bone: #ebe6dc;
     --blood: #b8231c;
+    --pixel: 'Press Start 2P', monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
@@ -48,10 +54,11 @@
     font-size: 11px;
   }
   .score {
-    font-size: 64px;
-    line-height: 0.85;
-    letter-spacing: -0.02em;
-    font-weight: 900;
+    font-family: var(--pixel);
+    font-size: 40px;
+    line-height: 1;
+    letter-spacing: 0;
+    font-weight: 400;
   }
   .bottom {
     display: flex;
@@ -89,10 +96,11 @@
   .title .red { color: var(--blood); }
   .sub {
     margin-top: 18px;
-    font-size: 10px;
-    letter-spacing: 0.32em;
+    font-family: var(--pixel);
+    font-size: 11px;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    opacity: 0.8;
+    opacity: 0.85;
   }
   .meta {
     margin-top: 28px;
@@ -123,21 +131,6 @@
     margin-top: 14px;
     color: var(--blood);
   }
-.kanye {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 80px;
-  height: 80px;
-  pointer-events: none;
-  transform: translate3d(0, 0, 0);
-  will-change: transform;
-  z-index: 2;
-}
-.kanye #k-root {
-  transform-box: fill-box;
-  transform-origin: center;
-}
 .mute-btn {
   background: transparent;
   border: 1px solid rgba(235,230,220,0.4);
@@ -158,7 +151,11 @@
   height: 100%;
 }
 #bg { z-index: 0; }
-#game { z-index: 1; background: transparent; }
+#game {
+  z-index: 1;
+  background: transparent;
+  image-rendering: pixelated;   /* hi-bit: crisp nearest-neighbor upscale */
+}
 
 /* Honest degradation when WebGL is unavailable: static Turrell-ish gradient. */
 .no-webgl #stage { background: radial-gradient(120% 90% at 50% 55%, #6e2bd1 0%, #1a0d2a 75%); }

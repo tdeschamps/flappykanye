@@ -1,107 +1,184 @@
-import { PHYSICS } from './game.js';
+// Pixel-sprite Kanye — the South Park design translated to 16-bit. The sprite
+// lives on the low-res game canvas in texel space; rotation is quantized to
+// 15° steps (the hi-bit tell).
+//
+// Rendering rule: every frame is COMPOSED unrotated (base + pupils/mouth/lids)
+// into an offscreen canvas, then stamped onto the game canvas with drawImage.
+// Shape fills antialias on a rotated context; images with smoothing off don't —
+// composing first keeps every texel hard.
 
-// Face-only SVG sprite. viewBox is "-38 -134 76 84" (76 wide × 84 tall) cropping
-// the head. The face/eye center sits at SVG-y ≈ -92, i.e. (-92 - -134)/84 = 0.5.
-const SVG_VB_W = 76;
-const SVG_VB_H = 84;
-const SVG_BODY_H = 84;           // rendered head height in logical units
-const SVG_BODY_W = SVG_BODY_H * (SVG_VB_W / SVG_VB_H);
-const SVG_FACE_FROM_TOP = 0.5;   // align hitbox to the eye line
+const PAL = {
+  k: '#15110d',   // afro
+  s: '#9b6440',   // skin
+  d: '#7a4a2e',   // skin shadow
+  b: '#0c0c0c',   // eyebrows / pupils
+  w: '#f4f1ea',   // eye whites
+  g: '#120f0b',   // goatee
+  c: '#0c0c0e',   // collar
+  l: '#c4c8ce',   // chain silver
+};
 
-// Pupil rest positions (from the SVG markup) and how far they can dart.
-const PUPIL_L = { x: -2.4, y: -90 };
-const PUPIL_R = { x: 2.4, y: -90 };
-const PUPIL_DART = 1.6;
+// 20×22 texels. South Park proportions: giant joined eyes, M hairline, goatee
+// crescent, chain collar peeking at the bust cutoff.
+const BASE = [
+  '......kkkkkkkk......',
+  '....kkkkkkkkkkkk....',
+  '...kkkkkkkkkkkkkk...',
+  '..kkkkkkkkkkkkkkkk..',
+  '..kkkkkkkkkkkkkkkk..',
+  '.kkkkkkkkkkkkkkkkkk.',
+  '.kkssssskkkkssssskk.',
+  '.ksbbssssssssssbbsk.',
+  '.ksssbbbssssbbbsssk.',
+  '.kswwwwwwsswwwwwwsk.',
+  '.kswwwwwwwwwwwwwwsk.',
+  'skswwwwwwwwwwwwwwsks',
+  '.kswwwwwwwwwwwwwwsk.',
+  '.kswwwwwwsswwwwwwsk.',
+  '.kssssssssssssssssk.',
+  '.kssssssssssssssssk.',
+  '..dssssssssssssssd..',
+  '..dgggsssssssgggd...',
+  '...ggggsssssgggg....',
+  '....gggggggggg......',
+  '..cccccccccccccc....',
+  '..cclcclcclcclcc....',
+];
+const SPR_W = 20, SPR_H = 22;
+const ANCHOR_X = 10, ANCHOR_Y = 11;   // the eye line — hitbox alignment
 
-export function createKanyeRig(el) {
+// Runtime overlay geometry (texels).
+const EYE_L = { cx: 6, cy: 11, inner: 8 };    // left eye center + inner-edge col
+const EYE_R = { cx: 13, cy: 11, inner: 11 };
+const PUPIL_DART = 1.5;
+
+function bake(rows) {
+  const cv = document.createElement('canvas');
+  cv.width = SPR_W; cv.height = SPR_H;
+  const c = cv.getContext('2d');
+  for (let y = 0; y < SPR_H; y++) {
+    for (let x = 0; x < SPR_W; x++) {
+      const ch = rows[y][x];
+      if (ch === '.') continue;
+      c.fillStyle = PAL[ch] || '#ff00ff';
+      c.fillRect(x, y, 1, 1);
+    }
+  }
+  return cv;
+}
+
+export function createKanye() {
+  const frame = document.createElement('canvas');
+  frame.width = SPR_W; frame.height = SPR_H;
   return {
-    root: el,
-    jaw:     el.querySelector('#k-jaw'),
-    cap:     el.querySelector('#k-cap'),
-    eyes:    el.querySelector('#k-eyes'),
-    pupilL:  el.querySelector('#k-pupil-l'),
-    pupilR:  el.querySelector('#k-pupil-r'),
-    // Animation state
-    rot: 0,            // current whole-sprite rotation (deg)
-    jawDrop: 0,        // 0..1, decays after flap; 1.0 on death (SVG only)
-    headBob: 0,        // logical units, decays after flap
+    base: bake(BASE),
+    frame,
+    fctx: frame.getContext('2d'),
+    rot: 0,
+    jawDrop: 0,
+    headBob: 0,
     deathTilt: 0,
+    blinkT: 0,
+    blinkNext: 2.4,
   };
 }
 
-export function placeKanye(rig, kanye, stageEl) {
-  const scale = stageEl.clientHeight / PHYSICS.H;   // logical units → CSS px
-
-  const bodyW = SVG_BODY_W;
-  const bodyH = SVG_BODY_H;
-  const chestFromTop = SVG_FACE_FROM_TOP;
-
-  // Center horizontally on kanye.x; align kanye.y to the face line. Whole-sprite
-  // tilt/spin (rig.rot) pivots about that point.
-  const topLeftX = (kanye.x - bodyW / 2) * scale;
-  const topLeftY = (kanye.y - bodyH * chestFromTop - rig.headBob) * scale;
-  rig.root.style.width = `${(bodyW * scale).toFixed(2)}px`;
-  rig.root.style.height = `${(bodyH * scale).toFixed(2)}px`;
-  rig.root.style.transformOrigin = `50% ${(chestFromTop * 100).toFixed(0)}%`;
-  rig.root.style.transform =
-    `translate3d(${topLeftX.toFixed(2)}px, ${topLeftY.toFixed(2)}px, 0) rotate(${rig.rot.toFixed(2)}deg)`;
+export function resetKanye(spr) {
+  spr.jawDrop = 0;
+  spr.headBob = 0;
+  spr.deathTilt = 0;
+  spr.blinkT = 0;
+  spr.blinkNext = 2.4;
 }
 
-export function updateKanyeRig(rig, state, dt) {
-  rig.jawDrop = Math.max(0, rig.jawDrop - dt * 4);
-  rig.headBob = Math.max(0, rig.headBob - dt * 50);
+export function triggerFlap(spr) {
+  spr.jawDrop = 0.6;
+  spr.headBob = 8;
+}
 
-  // Whole-body rotation from velocity.
-  let rot;
+export function triggerScore(spr) {
+  spr.jawDrop = Math.max(spr.jawDrop, 0.8);
+}
+
+export function updateKanye(spr, state, dt) {
+  spr.jawDrop = Math.max(0, spr.jawDrop - dt * 4);
+  spr.headBob = Math.max(0, spr.headBob - dt * 50);
+
   if (state.mode === 'idle') {
-    rot = Math.sin(state.t * 3) * 6;
+    spr.rot = Math.sin(state.t * 3) * 6;
   } else if (state.mode === 'dead') {
-    rig.deathTilt += dt * 200;
-    rot = rig.deathTilt;
-    rig.jawDrop = 1;
+    spr.deathTilt += dt * 200;
+    spr.rot = spr.deathTilt;
+    spr.jawDrop = 1;
   } else {
-    rot = Math.max(-30, Math.min(60, state.kanye.vy * 0.06));
+    spr.rot = Math.max(-30, Math.min(60, state.kanye.vy * 0.06));
   }
-  rig.rot = rot;
 
-  // Subtle idle head bob on the hair group.
-  const capTilt = (state.mode === 'idle' ? Math.sin(state.t * 0.5) * 3 : 0);
-  rig.cap.setAttribute('transform', `rotate(${capTilt.toFixed(2)} 0 -104)`);
+  if (state.mode !== 'dead') {
+    spr.blinkT = Math.max(0, spr.blinkT - dt);
+    spr.blinkNext -= dt;
+    if (spr.blinkNext <= 0) {
+      spr.blinkT = 0.12;
+      spr.blinkNext = 1.8 + Math.random() * 3;
+    }
+  }
+}
 
-  // Jaw/goatee drops slightly on flap and death.
-  const jawY = rig.jawDrop * 4 + (state.mode === 'dead' ? 4 : 0);
-  rig.jaw.setAttribute('transform', `translate(0 ${jawY.toFixed(2)})`);
+// Compose the current frame (unrotated, hard texels).
+function compose(spr, state) {
+  const c = spr.fctx;
+  c.clearRect(0, 0, SPR_W, SPR_H);
+  c.drawImage(spr.base, 0, 0);
 
-  // Eyes: pupils dart in the direction of vertical motion; cross/widen on death.
-  if (state.mode === 'dead') {
-    // Cross-eyed: pupils to inner corners, eyes widen a touch.
-    setPupil(rig.pupilL, PUPIL_L, 1.3, 0.6);
-    setPupil(rig.pupilR, PUPIL_R, -1.3, 0.6);
+  const dead = state.mode === 'dead';
+
+  if (dead) {
+    // X-eyes.
+    c.fillStyle = PAL.b;
+    for (const e of [EYE_L, EYE_R]) {
+      c.fillRect(e.cx - 1, e.cy - 1, 1, 1);
+      c.fillRect(e.cx + 1, e.cy - 1, 1, 1);
+      c.fillRect(e.cx, e.cy, 1, 1);
+      c.fillRect(e.cx - 1, e.cy + 1, 1, 1);
+      c.fillRect(e.cx + 1, e.cy + 1, 1, 1);
+    }
+  } else if (spr.blinkT > 0) {
+    // Lids: skin band across both eyes.
+    c.fillStyle = PAL.s;
+    c.fillRect(3, 10, 14, 3);
   } else {
+    // Pupils sit at the inner edges (South Park), dart with vertical motion.
     const vy = state.kanye.vy || 0;
-    const dy = Math.max(-1, Math.min(1, vy / 500)) * PUPIL_DART;   // look down when falling
-    const dx = state.mode === 'idle' ? Math.sin(state.t * 1.5) * 0.6 : 0;
-    setPupil(rig.pupilL, PUPIL_L, dx, dy);
-    setPupil(rig.pupilR, PUPIL_R, dx, dy);
+    const dy = Math.round(Math.max(-1, Math.min(1, vy / 500)) * PUPIL_DART);
+    const dx = state.mode === 'idle' ? Math.round(Math.sin(state.t * 1.5)) : 0;
+    c.fillStyle = PAL.b;
+    c.fillRect(EYE_L.inner + dx, EYE_L.cy - 1 + dy, 1, 2);
+    c.fillRect(EYE_R.inner + dx, EYE_R.cy - 1 + dy, 1, 2);
+  }
+
+  // Mouth: frown (corners down), or open jaw on flap/death.
+  if (spr.jawDrop > 0.25 || dead) {
+    c.fillStyle = '#1a0b04';
+    c.fillRect(8, 15, 4, dead ? 3 : 2);
+  } else {
+    c.fillStyle = '#1a0b04';
+    c.fillRect(8, 15, 4, 1);
+    c.fillRect(7, 16, 1, 1);
+    c.fillRect(12, 16, 1, 1);
   }
 }
 
-function setPupil(el, rest, dx, dy) {
-  el.setAttribute('cx', (rest.x + dx).toFixed(2));
-  el.setAttribute('cy', (rest.y + dy).toFixed(2));
-}
+// Draw in texel space. tex = texels per logical unit.
+export function drawKanye(ctx, spr, state, tex) {
+  compose(spr, state);
 
-export function triggerFlap(rig) {
-  rig.jawDrop = 0.6;
-  rig.headBob = 8;
-}
+  const px = Math.round(state.kanye.x * tex);
+  const py = Math.round((state.kanye.y - spr.headBob) * tex);
+  const q = Math.round(spr.rot / 15) * 15;   // quantized rotation — the 16-bit tell
 
-export function triggerScore(rig) {
-  rig.jawDrop = Math.max(rig.jawDrop, 0.8);
-}
-
-export function resetKanyeRig(rig) {
-  rig.jawDrop = 0;
-  rig.headBob = 0;
-  rig.deathTilt = 0;
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(q * Math.PI / 180);
+  ctx.drawImage(spr.frame, -ANCHOR_X, -ANCHOR_Y);
+  ctx.restore();
 }
