@@ -1,4 +1,4 @@
-import { CHAMBERS, chamberFor } from './chambers.js';
+import { ERAS, POINTS_PER_ERA, eraFor } from './eras.js';
 import {
   PHYSICS, recomputeDims, createGameState, resetGame, stepPhysics, stepDeath, flap as physicsFlap
 } from './game.js';
@@ -17,7 +17,9 @@ const chamberEl = document.getElementById('chamber');
 const overlay = document.getElementById('overlay');
 const deathChamberEl = document.getElementById('death-chamber');
 const bgCanvas = document.getElementById('bg');
-const shader = createShaderBackdrop(bgCanvas);
+const QUERY = new URLSearchParams(location.search);
+const DEBUG = QUERY.has('debug');
+const shader = createShaderBackdrop(bgCanvas, { preserveDrawingBuffer: DEBUG });
 // Honest degradation: no parallel renderer — a static CSS gradient (style.css).
 if (!shader) document.body.classList.add('no-webgl');
 const kanye = createKanye();
@@ -63,11 +65,17 @@ applyViewport();
 const state = createGameState();
 bestEl.textContent = state.best;
 
+function eraLabel(score) {
+  const { era, lap } = eraFor(score);
+  const goat = lap > 0 ? 'GOAT · ' : '';
+  return `${goat}${era.roman} · ${era.album}`;
+}
+
 function reset() {
   resetGame(state);
   resetKanye(kanye);
   scoreEl.textContent = '0';
-  chamberEl.textContent = CHAMBERS[0].name;
+  chamberEl.textContent = eraLabel(0);
 }
 
 function flap() {
@@ -122,18 +130,44 @@ window.addEventListener('keydown', (e) => {
 canvas.addEventListener('pointerdown', onTap);
 overlay.addEventListener('pointerdown', onTap);
 
-// --- Debug (?debug): keys 1–7 jump to chamber boundaries, G to a late lap ---
-const DEBUG = new URLSearchParams(location.search).has('debug');
+// --- Debug (?debug): keys 1–7 jump to era boundaries, G to GOAT lap 2.
+//     ?score=N sets the starting score directly (screenshot harness). ---
+if (DEBUG && QUERY.has('score')) {
+  state.score = Math.max(0, parseInt(QUERY.get('score'), 10) || 0);
+  scoreEl.textContent = String(state.score);
+  chamberEl.textContent = eraLabel(state.score);
+}
 if (DEBUG) {
   window.addEventListener('keydown', (e) => {
     let target = null;
-    if (e.key >= '1' && e.key <= '7') target = (Number(e.key) - 1) * 5;
-    if (e.key === 'g' || e.key === 'G') target = 30;
+    if (e.key >= '1' && e.key <= '7') target = (Number(e.key) - 1) * POINTS_PER_ERA;
+    if (e.key === 'g' || e.key === 'G') target = POINTS_PER_ERA * ERAS.length;
     if (target === null) return;
     state.score = target;
     scoreEl.textContent = String(state.score);
-    chamberEl.textContent = chamberFor(state.score).from.name;
+    chamberEl.textContent = eraLabel(state.score);
   });
+
+  // Screenshot harness: force a render and return the composited frame as a
+  // JPEG data URL. Works even when the tab is hidden (rAF throttled).
+  window.__setScore = (n) => {
+    state.score = Math.max(0, n | 0);
+    scoreEl.textContent = String(state.score);
+    chamberEl.textContent = eraLabel(state.score);
+  };
+  window.__tick = (dt = 1 / 60) => { state.t += dt; update(dt); render(); };
+  window.__snap = (w = 450) => {
+    render();
+    const ar = bgCanvas.height ? bgCanvas.height / bgCanvas.width : 4 / 3;
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = Math.round(w * ar);
+    const c = out.getContext('2d');
+    c.drawImage(bgCanvas, 0, 0, out.width, out.height);
+    c.imageSmoothingEnabled = false;
+    c.drawImage(canvas, 0, 0, out.width, out.height);
+    return out.toDataURL('image/jpeg', 0.82);
+  };
 }
 
 // --- Drawing (texel space) ---
@@ -177,10 +211,10 @@ function update(dt) {
     const ev = stepPhysics(state, dt);
     if (ev === 'score') {
       scoreEl.textContent = String(state.score);
-      chamberEl.textContent = chamberFor(state.score).from.name;
+      chamberEl.textContent = eraLabel(state.score);
       triggerScore(kanye);
       audio.score(state.lastScoredGapY);
-      if (state.score % 5 === 0) audio.chamber(chamberFor(state.score).idx);
+      if (state.score % POINTS_PER_ERA === 0) audio.chamber(eraFor(state.score).idx);
     } else if (ev === 'death') {
       die();
     }
@@ -194,26 +228,20 @@ function update(dt) {
 }
 
 function render() {
-  const c = chamberFor(state.score);
-  const drawPalette = { accent: c.from.accent };
+  // Eras are held pure — no continuous crossfade. (Step 5 adds the eased
+  // visual object that morphs between rooms during transitions.)
+  const { era } = eraFor(state.score);
+  const drawPalette = { accent: era.pal.accent };
 
   if (shader) {
-    const a1 = hexToVec3(c.from.a), a2 = hexToVec3(c.to.a);
-    const b1 = hexToVec3(c.from.b), b2 = hexToVec3(c.to.b);
-    // Crossfade aperture geometry between chambers so the shape morphs gradually.
-    const pos  = [lerp(c.from.pos[0],  c.to.pos[0],  c.t),
-                  lerp(c.from.pos[1],  c.to.pos[1],  c.t)];
-    const size = [lerp(c.from.size[0], c.to.size[0], c.t),
-                  lerp(c.from.size[1], c.to.size[1], c.t)];
-    const radius = lerp(c.from.radius, c.to.radius, c.t);
     shader.render({
       time: state.t,
-      colorA: mixVec3(a1, a2, c.t),
-      colorB: mixVec3(b1, b2, c.t),
-      accent: hexToVec3(c.from.accent),
-      aperturePos: pos,
-      apertureSize: size,
-      apertureRadius: radius,
+      colorA: hexToVec3(era.pal.a),
+      colorB: hexToVec3(era.pal.b),
+      accent: hexToVec3(era.pal.accent),
+      aperturePos: era.aperture.pos,
+      apertureSize: era.aperture.size,
+      apertureRadius: era.aperture.radius,
       flash: state.flash,
       shake: state.shake,
     });

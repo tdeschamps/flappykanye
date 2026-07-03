@@ -124,8 +124,13 @@ function compile(gl, type, src) {
   return sh;
 }
 
-export function createShaderBackdrop(canvas) {
-  const gl = canvas.getContext('webgl', { antialias: false, alpha: false });
+export function createShaderBackdrop(canvas, opts = {}) {
+  const gl = canvas.getContext('webgl', {
+    antialias: false,
+    alpha: false,
+    // Debug harness reads pixels back after render; costs nothing real.
+    preserveDrawingBuffer: !!opts.preserveDrawingBuffer,
+  });
   if (!gl) return null;
 
   let program;

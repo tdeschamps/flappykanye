@@ -147,7 +147,7 @@ export function score(gapY = 480) {
 export function chamber(idx) {
   if (!ctx) ensureCtx();
   const now = ctx.currentTime;
-  const roots = [98, 87, 73.4, 110, 82.4, 65.4];
+  const roots = [98, 87, 73.4, 110, 82.4, 65.4, 55];
   const root = roots[idx % roots.length];
   const intervals = [1, 1.5, 2];
   const filter = ctx.createBiquadFilter();
