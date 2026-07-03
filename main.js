@@ -25,6 +25,8 @@ const egoBar = document.getElementById('ego-bar');
 const egoChip = document.getElementById('ego-chip');
 const toastEl = document.getElementById('toast');
 const hudEl = document.querySelector('.hud');
+const nowLine = document.getElementById('now-line');
+const onboardEl = document.getElementById('onboard');
 const stageEl = document.getElementById('stage');
 const eraCard = document.getElementById('era-card');
 const ecRoman = document.getElementById('ec-roman');
@@ -116,8 +118,20 @@ const visual = {
   fog: E0.mood.fog,
 };
 
+let attractIdx = -1;
 function easeVisual(dt) {
-  const { era, lap } = eraFor(state.score);
+  let { era, lap } = eraFor(state.score);
+  // Idle attract: after 8s on the title, the gallery cycles its rooms.
+  if (state.mode === 'idle' && state.t > 8) {
+    const pi = Math.floor((state.t - 8) / 4) % ERAS.length;
+    era = ERAS[pi];
+    lap = 0;
+    if (pi !== attractIdx) {
+      attractIdx = pi;
+      nowLine.textContent = `ERA ${era.roman} · ${era.album} · ${era.year}`;
+      stageEl.style.setProperty('--era-accent', era.pal.accent);
+    }
+  }
   // Slow the ease during a choreographed transition so the room visibly
   // rebuilds itself over ~1.6s instead of snapping.
   const k = Math.min(1, dt * (state.transition ? 1.5 : 2.8));
@@ -169,6 +183,8 @@ function reset() {
   chamberEl.textContent = eraLabel(0);
   eraCard.classList.add('hidden');
   stageEl.style.setProperty('--era-accent', ERAS[0].pal.accent);
+  nowLine.textContent = `ERA I · ${ERAS[0].album} · ${ERAS[0].year}`;
+  attractIdx = -1;
   lastEraKey = 0;
   interruptFired = false;
   egoToastFired = false;
@@ -206,6 +222,7 @@ function flap() {
     state.mode = 'playing';
     overlay.classList.add('hidden');
     deathBlock.style.display = 'none';
+    onboardEl.style.display = 'none';
     music.setMode('playing');
     save.runs++; persistSave();
   } else if (state.mode === 'dead') {
@@ -224,6 +241,35 @@ function flap() {
   music.start();
   audio.flap(eraFor(state.score).era.id === 'heartbreak', state.ego);
   physicsFlap(state);
+  spawnParts(state.kanye.x - 24, state.kanye.y + 28, [235, 230, 220], 3, true);
+}
+
+// --- Pixel particles (render-side juice; 1-texel motes) ---
+const parts = [];
+function spawnParts(x, y, rgb, n, drift = false) {
+  for (let i = 0; i < n; i++) {
+    parts.push({
+      x, y,
+      vx: (Math.random() - 0.5) * (drift ? 90 : 200),
+      vy: drift ? 40 + Math.random() * 80 : (Math.random() - 0.5) * 220,
+      life: 0.45 + Math.random() * 0.35,
+      rgb,
+    });
+  }
+}
+function stepParts(dt) {
+  for (const p of parts) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 300 * dt;
+    p.life -= dt;
+  }
+  for (let i = parts.length - 1; i >= 0; i--) if (parts[i].life <= 0) parts.splice(i, 1);
+}
+function scorePop() {
+  scoreEl.classList.remove('pop');
+  void scoreEl.offsetWidth;
+  scoreEl.classList.add('pop');
 }
 
 // Title-screen discography progress: one dot per era, gold once GOAT reached.
@@ -263,6 +309,7 @@ function die() {
   const { era, lap } = eraFor(state.score);
   audio.death(era.id);
   music.setMode('idle');
+  spawnParts(state.kanye.x, state.kanye.y, [255, 84, 60], 14);
   if (state.score > state.best) {
     state.best = state.score;
     localStorage.setItem('flappykanye_best', String(state.best));
@@ -388,6 +435,23 @@ function mixRgb(a, b, t) {
 }
 const GOLD_RGB = [255, 215, 0];
 
+// Pre-baked Donda spotlight: checkerboard-dithered diamond falloff, the
+// 16-bit way to draw a soft light. Baked once, stamped every frame.
+const DONDA_HALO = (() => {
+  const cv = document.createElement('canvas');
+  cv.width = 37; cv.height = 37;
+  const c = cv.getContext('2d');
+  for (let y = 0; y < 37; y++) {
+    for (let x = 0; x < 37; x++) {
+      const d = Math.abs(x - 18) + Math.abs(y - 18);
+      if (d > 17 || (x + y) % 2) continue;
+      c.fillStyle = `rgba(232,228,218,${(0.16 * (1 - d / 17)).toFixed(3)})`;
+      c.fillRect(x, y, 1, 1);
+    }
+  }
+  return cv;
+})();
+
 function drawMonolith(p, era, goat) {
   let x = tx(p.x);
   const w = Math.max(2, tx(PHYSICS.PIPE_W));
@@ -457,7 +521,8 @@ function update(dt) {
   // The 808s pulse follows the audible heartbeat when the bed is running.
   state.beatPhase = music.getPulsePhase() ?? (state.t % 1);
   if (state.mode === 'idle') {
-    state.kanye.y = PHYSICS.H * 0.5 + Math.sin(state.t * 3) * 16;
+    // Bob above the title copy so the poster text stays clear on any width.
+    state.kanye.y = PHYSICS.H * 0.30 + Math.sin(state.t * 3) * 16;
     state.kanye.rot = Math.sin(state.t * 3) * 0.1;
   }
   if (state.mode === 'playing') {
@@ -466,6 +531,8 @@ function update(dt) {
       scoreEl.textContent = String(state.score);
       chamberEl.textContent = eraLabel(state.score);
       triggerScore(kanye);
+      scorePop();
+      spawnParts(state.kanye.x + 10, state.kanye.y, hexToRgb(eraFor(state.score).era.pal.accent), 6);
       audio.score(state.lastScoredGapY, music.getScaleFreqs());
 
       // Era boundary — detected by index change, not modulo, because ×2
@@ -547,6 +614,7 @@ function update(dt) {
     }
   }
   easeVisual(dt);
+  stepParts(dt);
   updateKanye(kanye, state, dt);
 }
 
@@ -594,13 +662,10 @@ function render() {
 
   for (const p of state.pipes) drawMonolith(p, era, goat);
 
-  // Donda: a faint square halo so Kanye never vanishes into the void.
+  // Donda: a dithered diamond of light so Kanye never vanishes into the void.
   if (era.id === 'donda') {
     const px = tx(state.kanye.x), py = tx(state.kanye.y);
-    for (const [r, a] of [[16, 0.04], [11, 0.06], [7, 0.09]]) {
-      ctx.fillStyle = `rgba(232,228,218,${a})`;
-      ctx.fillRect(px - r, py - r, r * 2, r * 2);
-    }
+    ctx.drawImage(DONDA_HALO, px - 18, py - 18);
   }
 
   // Gold ego aura: a ring that thickens as the head inflates.
@@ -625,6 +690,12 @@ function render() {
     ctx.fillRect(px - r, py + r - 1, r * 2, 1);
     ctx.fillRect(px - r, py - r, 1, r * 2);
     ctx.fillRect(px + r - 1, py - r, 1, r * 2);
+  }
+
+  // Particles: 1-texel motes with life-faded alpha.
+  for (const p of parts) {
+    ctx.fillStyle = `rgba(${p.rgb[0] | 0},${p.rgb[1] | 0},${p.rgb[2] | 0},${Math.min(1, p.life * 2)})`;
+    ctx.fillRect(tx(p.x), tx(p.y), 1, 1);
   }
 
   drawKanye(ctx, kanye, state, TEX);
@@ -677,4 +748,5 @@ window.addEventListener('resize', () => {
 
 reset();
 renderEraDots();
+if (save.runs === 0) onboardEl.style.display = 'block';
 requestAnimationFrame((t) => { last = t; frame(t); });

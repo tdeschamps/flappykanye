@@ -60,12 +60,25 @@
     letter-spacing: 0;
     font-weight: 400;
   }
+  .score.pop { animation: score-pop 140ms ease; }
+  @keyframes score-pop {
+    50% { transform: scale(1.14); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .score.pop { animation: none; }
+  }
   .bottom {
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
     font-size: 10px;
     opacity: 0.65;
+  }
+  /* Narrow screens: tighten the HUD so nothing collides. */
+  @media (max-width: 560px) {
+    .top { font-size: 9px; letter-spacing: 0.08em; gap: 8px; }
+    .score { font-size: 28px; }
+    .ego-track { width: 64px; }
   }
   .overlay {
     position: absolute;
@@ -94,6 +107,30 @@
     text-transform: uppercase;
   }
   .title .red { color: var(--blood); }
+  .tagline {
+    margin-top: 12px;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.5em;
+    opacity: 0.75;
+    text-transform: uppercase;
+  }
+  .now-line {
+    margin-top: 12px;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.32em;
+    color: var(--era-accent, var(--bone));
+    text-transform: uppercase;
+    transition: color 600ms ease;
+  }
+  .onboard {
+    margin-top: 14px;
+    font-family: var(--pixel);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: #f0c33c;
+  }
   .sub {
     margin-top: 18px;
     font-family: var(--pixel);
@@ -257,7 +294,7 @@
   }
 .mute-btn {
   background: transparent;
-  border: 1px solid rgba(235,230,220,0.4);
+  border: 1px solid var(--era-accent, rgba(235,230,220,0.4));
   color: inherit;
   font: inherit;
   letter-spacing: inherit;
