@@ -100,7 +100,22 @@ function easeVisual(dt) {
   visual.aberration = to(visual.aberration, era.mood.aberration);
   visual.glitch = to(visual.glitch, REDUCED ? 0 : era.mood.glitch);
   visual.fog = to(visual.fog, era.mood.fog);
+
+  // Physics ease with the same clock, so difficulty ramps as the room morphs.
+  const tn = state.tuning;
+  tn.gap = to(tn.gap, era.physics.gap);
+  tn.dx = to(tn.dx, era.physics.speed * PHYSICS.H);
+  tn.spawn = to(tn.spawn, era.physics.spawn);
+  tn.gravity = to(tn.gravity, PHYSICS.GRAVITY * era.physics.gravityMul);
+  state.obstacle = era.obstacle;
 }
+
+// Start the run on era I's physics, not the generic defaults.
+state.tuning.gap = E0.physics.gap;
+state.tuning.dx = E0.physics.speed * PHYSICS.H;
+state.tuning.spawn = E0.physics.spawn;
+state.tuning.gravity = PHYSICS.GRAVITY * E0.physics.gravityMul;
+state.obstacle = E0.obstacle;
 
 function eraLabel(score) {
   const { era, lap } = eraFor(score);
@@ -191,8 +206,37 @@ if (DEBUG) {
     state.score = Math.max(0, n | 0);
     scoreEl.textContent = String(state.score);
     chamberEl.textContent = eraLabel(state.score);
+    // Room jump: fresh fair field, kanye airborne mid-screen.
+    state.pipes = [];
+    state.spawnTimer = 0.6;
+    state.kanye.y = PHYSICS.H * 0.45;
+    state.kanye.vy = 0;
   };
   window.__tick = (dt = 1 / 60) => { state.t += dt; update(dt); render(); };
+  // Autopilot: play N frames steering toward the nearest gap center. Returns
+  // mode:score so fairness checks can assert survival.
+  window.__auto = (frames = 300) => {
+    if (state.mode !== 'playing') {
+      state.mode = 'playing';
+      overlay.classList.add('hidden');
+      deathChamberEl.style.display = 'none';
+    }
+    for (let i = 0; i < frames; i++) {
+      let target = PHYSICS.H * 0.5;
+      let nearest = Infinity;
+      for (const p of state.pipes) {
+        const d = (p.x + PHYSICS.PIPE_W) - state.kanye.x;
+        if (d > -10 && d < nearest) { nearest = d; target = p.gapY + p.gapH / 2; }
+      }
+      if (state.kanye.y > target && state.kanye.vy > -60) {
+        physicsFlap(state);
+        triggerFlap(kanye);
+      }
+      window.__tick();
+      if (state.mode === 'dead') break;
+    }
+    return `${state.mode}:${state.score}`;
+  };
   window.__snap = (w = 450) => {
     render();
     const ar = bgCanvas.height ? bgCanvas.height / bgCanvas.width : 4 / 3;
@@ -208,32 +252,64 @@ if (DEBUG) {
 }
 
 // --- Drawing (texel space) ---
-function drawMonolith(p, palette) {
-  const x = tx(p.x);
+function hash01(a, b) {
+  const s = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function drawMonolith(p, era) {
+  let x = tx(p.x);
   const w = Math.max(2, tx(PHYSICS.PIPE_W));
   const topH = tx(p.gapY);
   const botY = tx(p.gapY + p.gapH);
   const botH = canvas.height - botY;
-  const accent = hexToRgb(palette.accent);
+  const ink = era.pal.ink;
+  const rim = hexToRgb(era.pal.rim);
+
+  // Yeezus: draw-only x snap every 1/3s — collision stays on the true x.
+  if (p.kind === 'jitter') {
+    x += Math.round((hash01(Math.floor(state.t * 3), p.seed) - 0.5) * 4);
+  }
+
+  // Donda: near-invisible until it approaches — rim ramps up, hard but fair.
+  let rimA = 0.9, inkA = 1, mouthA = 0.85;
+  if (p.kind === 'reveal') {
+    const approach = Math.max(0, Math.min(1, 1 - (p.x - state.kanye.x) / (PHYSICS.H * 0.55)));
+    rimA = 0.15 + 0.75 * approach;
+    mouthA = 0.1 + 0.8 * approach;
+  }
+  // 808s: the rim throbs with the heartbeat.
+  if (p.kind === 'pulse') {
+    const beat = state.t % 1;
+    const lub = Math.max(0, Math.sin(beat * Math.PI * 6)) * Math.max(0, 1 - beat * 2.2);
+    rimA = 0.35 + 0.6 * lub;
+  }
 
   // Chunky slab body with a subtle left bevel.
-  ctx.fillStyle = '#0a0a0a';
+  ctx.globalAlpha = inkA;
+  ctx.fillStyle = ink;
   ctx.fillRect(x, 0, w, topH);
   ctx.fillRect(x, botY, w, botH);
+  ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(255,255,255,0.07)';
   ctx.fillRect(x, 0, 1, topH);
   ctx.fillRect(x, botY, 1, botH);
 
-  // 1-texel accent rim on the lit (right) edge.
-  ctx.fillStyle = rgbToCss(accent, 0.9);
+  // 1-texel rim on the lit (right) edge; MBDTF gets a gilded double rule.
+  ctx.fillStyle = rgbToCss(rim, rimA);
   ctx.fillRect(x + w - 1, 0, 1, topH);
   ctx.fillRect(x + w - 1, botY, 1, botH);
+  if (p.kind === 'drift') {
+    ctx.fillStyle = rgbToCss(rim, rimA * 0.5);
+    ctx.fillRect(x + w - 3, 0, 1, topH);
+    ctx.fillRect(x + w - 3, botY, 1, botH);
+  }
 
   // Gap mouths: hard 1-texel light line + a dimmer step — pixel bloom.
-  ctx.fillStyle = rgbToCss(accent, 0.85);
+  ctx.fillStyle = rgbToCss(rim, mouthA);
   ctx.fillRect(x, topH - 1, w, 1);
   ctx.fillRect(x, botY, w, 1);
-  ctx.fillStyle = rgbToCss(accent, 0.3);
+  ctx.fillStyle = rgbToCss(rim, mouthA * 0.35);
   ctx.fillRect(x, topH - 2, w, 1);
   ctx.fillRect(x, botY + 1, w, 1);
 }
@@ -267,7 +343,6 @@ function update(dt) {
 
 function render() {
   const { era } = eraFor(state.score);
-  const drawPalette = { accent: era.pal.accent };
 
   // Heartbeat pulse: only alive in the 808s room (bed phase drives this
   // properly once music.js lands; a 60bpm lub-dub shape for now).
@@ -308,7 +383,17 @@ function render() {
     );
   }
 
-  for (const p of state.pipes) drawMonolith(p, drawPalette);
+  for (const p of state.pipes) drawMonolith(p, era);
+
+  // Donda: a faint square halo so Kanye never vanishes into the void.
+  if (era.id === 'donda') {
+    const px = tx(state.kanye.x), py = tx(state.kanye.y);
+    for (const [r, a] of [[16, 0.04], [11, 0.06], [7, 0.09]]) {
+      ctx.fillStyle = `rgba(232,228,218,${a})`;
+      ctx.fillRect(px - r, py - r, r * 2, r * 2);
+    }
+  }
+
   drawKanye(ctx, kanye, state, TEX);
   // Death flash — red Yeezus burst.
   if (state.flash > 0) {

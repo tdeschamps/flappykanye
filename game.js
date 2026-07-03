@@ -34,15 +34,28 @@ export function createGameState() {
     best: parseInt(localStorage.getItem('flappykanye_best') || '0', 10),
     pipes: [],
     spawnTimer: 0,
+    spawnCount: 0,
     kanye: { x: PHYSICS.KANYE_X, y: PHYSICS.H * 0.5, vy: 0, rot: 0 },
     shake: 0,
     flash: 0,
+    // Era physics targets — set and eased by main.js each frame so game.js
+    // stays pure. Values are logical units (dx = px/s, gravity absolute).
+    tuning: {
+      gap: PHYSICS.PIPE_GAP,
+      dx: PHYSICS.PIPE_DX,
+      spawn: PHYSICS.PIPE_SPAWN,
+      gravity: PHYSICS.GRAVITY,
+    },
+    // Obstacle behavior kind for newly spawned pipes ('static'|'bob'|'pulse'|
+    // 'drift'|'jitter'|'wave'|'reveal') — set by main.js from the active era.
+    obstacle: 'static',
   };
 }
 
 export function resetGame(state) {
   state.pipes = [];
   state.spawnTimer = 0;
+  state.spawnCount = 0;
   state.kanye.y = PHYSICS.H * 0.5;
   state.kanye.vy = 0;
   state.kanye.rot = 0;
@@ -52,10 +65,56 @@ export function resetGame(state) {
   state.flash = 0;
 }
 
+const GAP_MARGIN = 110;   // min distance from screen edges to a gap mouth
+
 export function spawnPipe(state) {
-  const margin = 110;
-  const gapY = margin + Math.random() * (PHYSICS.H - margin * 2 - PHYSICS.PIPE_GAP);
-  state.pipes.push({ x: PHYSICS.W + PHYSICS.PIPE_W, gapY, gapH: PHYSICS.PIPE_GAP, passed: false });
+  const gap = state.tuning.gap;
+  const range = PHYSICS.H - GAP_MARGIN * 2 - gap;
+  let gapY;
+  if (state.obstacle === 'wave') {
+    // TLOP: gap placement rides a sine across consecutive spawns — high, low,
+    // high, like a choir swell. You fly the melody instead of dodging noise.
+    const center = GAP_MARGIN + range / 2;
+    gapY = center + Math.sin(state.spawnCount * 0.9) * (range / 2) * 0.9;
+    gapY = Math.max(GAP_MARGIN, Math.min(GAP_MARGIN + range, gapY));
+  } else {
+    gapY = GAP_MARGIN + Math.random() * range;
+  }
+  state.pipes.push({
+    x: PHYSICS.W + PHYSICS.PIPE_W,
+    gapY,
+    baseGapY: gapY,
+    gapH: gap,
+    baseGapH: gap,
+    passed: false,
+    kind: state.obstacle,
+    seed: Math.random() * Math.PI * 2,
+    born: state.t,
+  });
+  state.spawnCount++;
+}
+
+// Per-kind live behavior. 'jitter' and 'reveal' are draw-only (collision uses
+// true geometry — always fair); the movers below are physical and the hitbox
+// follows what you see.
+function stepObstacles(state) {
+  for (const p of state.pipes) {
+    if (p.kind === 'bob') {
+      p.gapY = p.baseGapY + Math.sin((state.t - p.born) * 1.1 + p.seed) * 24;
+    } else if (p.kind === 'drift') {
+      p.gapY = p.baseGapY + Math.sin((state.t - p.born) * (Math.PI * 2 / 3.2) + p.seed) * 34;
+    } else if (p.kind === 'pulse') {
+      // Gap breathes with the 60bpm heartbeat — deterministic from state.t.
+      const beat = state.t % 1;
+      const lub = Math.max(0, Math.sin(beat * Math.PI * 6)) * Math.max(0, 1 - beat * 2.2);
+      p.gapH = p.baseGapH + lub * 14;
+      p.gapY = p.baseGapY - lub * 7;
+    }
+    // Clamp movers so a gap mouth never leaves the fair zone.
+    if (p.kind === 'bob' || p.kind === 'drift') {
+      p.gapY = Math.max(GAP_MARGIN, Math.min(PHYSICS.H - GAP_MARGIN - p.gapH, p.gapY));
+    }
+  }
 }
 
 // Returns one of: null | 'score' | 'death'
@@ -63,7 +122,7 @@ export function spawnPipe(state) {
 export function stepPhysics(state, dt) {
   if (state.mode !== 'playing') return null;
 
-  state.kanye.vy += PHYSICS.GRAVITY * dt;
+  state.kanye.vy += state.tuning.gravity * dt;
   state.kanye.y += state.kanye.vy * dt;
   const target = Math.max(-0.5, Math.min(1.2, state.kanye.vy / 700));
   state.kanye.rot += (target - state.kanye.rot) * Math.min(1, dt * 8);
@@ -71,12 +130,14 @@ export function stepPhysics(state, dt) {
   state.spawnTimer -= dt;
   if (state.spawnTimer <= 0) {
     spawnPipe(state);
-    state.spawnTimer = PHYSICS.PIPE_SPAWN;
+    state.spawnTimer = state.tuning.spawn;
   }
+
+  stepObstacles(state);
 
   let scored = false;
   for (const p of state.pipes) {
-    p.x -= PHYSICS.PIPE_DX * dt;
+    p.x -= state.tuning.dx * dt;
     if (!p.passed && p.x + PHYSICS.PIPE_W < state.kanye.x - PHYSICS.KANYE_R) {
       p.passed = true;
       state.score += 1;
