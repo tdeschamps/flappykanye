@@ -1,6 +1,6 @@
 import { CHAMBERS, chamberFor } from './chambers.js';
 import {
-  PHYSICS, createGameState, resetGame, stepPhysics, stepDeath, flap as physicsFlap
+  PHYSICS, recomputeDims, createGameState, resetGame, stepPhysics, stepDeath, flap as physicsFlap
 } from './game.js';
 import {
   createKanyeRig, placeKanye, updateKanyeRig, triggerFlap, triggerScore, resetKanyeRig
@@ -10,8 +10,6 @@ import { createShaderBackdrop, hexToVec3, mixVec3 } from './shader.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const W = PHYSICS.W;
-const H = PHYSICS.H;
 
 const scoreEl = document.getElementById('score');
 const bestEl = document.getElementById('best');
@@ -43,10 +41,27 @@ function mixHex(h1, h2, t) {
   return [lerp(a[0],b[0],t), lerp(a[1],b[1],t), lerp(a[2],b[2],t)];
 }
 
+// Size the 2D canvas backing store to the playfield × devicePixelRatio, then map
+// the logical W×H coordinate space onto it via setTransform so every draw call
+// keeps working in logical units regardless of viewport size or DPR.
+function sizeGameCanvas() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(PHYSICS.W * dpr);
+  canvas.height = Math.round(PHYSICS.H * dpr);
+  ctx.setTransform(canvas.width / PHYSICS.W, 0, 0, canvas.height / PHYSICS.H, 0, 0);
+}
+
+// Recompute dims for the current viewport and resize the 2D canvas. The WebGL
+// backdrop self-resizes each render; placeKanye re-derives its scale next frame.
+function applyViewport() {
+  recomputeDims(window.innerWidth, window.innerHeight);
+  sizeGameCanvas();
+}
+
+applyViewport();
+
 const state = createGameState();
 bestEl.textContent = state.best;
-
-const PIPE_W = PHYSICS.PIPE_W;
 
 function reset() {
   resetGame(state);
@@ -109,6 +124,7 @@ overlay.addEventListener('pointerdown', onTap);
 
 // --- Drawing ---
 function drawTurrellBackdrop(palette, time) {
+  const W = PHYSICS.W, H = PHYSICS.H;
   // Soft radial light field — homage to Turrell's Ganzfeld effect.
   const cx = W * (0.5 + Math.sin(time * 0.15) * 0.08);
   const cy = H * (0.55 + Math.cos(time * 0.11) * 0.06);
@@ -163,6 +179,7 @@ function roundRect(x, y, w, h, r) {
 }
 
 function drawMonolith(p, palette) {
+  const H = PHYSICS.H, PIPE_W = PHYSICS.PIPE_W;
   // Brutalist Donda-black slab with a sharp bone-white edge.
   const topH = p.gapY;
   const botY = p.gapY + p.gapH;
@@ -215,13 +232,13 @@ function drawForegroundType(palette) {
   ctx.textBaseline = 'middle';
   // Drift the watermark like Turrell light shifts.
   const drift = Math.sin(state.t * 0.25) * 8;
-  ctx.fillText(String(state.score), W / 2 + drift, H * 0.34);
+  ctx.fillText(String(state.score), PHYSICS.W / 2 + drift, PHYSICS.H * 0.34);
   ctx.restore();
 }
 
 function update(dt) {
   if (state.mode === 'idle') {
-    state.kanye.y = H * 0.5 + Math.sin(state.t * 3) * 16;
+    state.kanye.y = PHYSICS.H * 0.5 + Math.sin(state.t * 3) * 16;
     state.kanye.rot = Math.sin(state.t * 3) * 0.1;
   }
   if (state.mode === 'playing') {
@@ -289,7 +306,7 @@ function render() {
 
   // When the shader owns the backdrop, the 2D canvas is transparent —
   // clear it each frame so pipes don't smear across previous positions.
-  if (shader) ctx.clearRect(0, 0, W, H);
+  if (shader) ctx.clearRect(0, 0, PHYSICS.W, PHYSICS.H);
 
   ctx.save();
   if (state.shake > 0) {
@@ -305,7 +322,7 @@ function render() {
   // Death flash — red Yeezus burst.
   if (state.flash > 0) {
     ctx.fillStyle = `rgba(184,35,28,${state.flash * 0.6})`;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillRect(0, 0, PHYSICS.W, PHYSICS.H);
   }
 
   ctx.restore();
@@ -324,6 +341,16 @@ function frame(now) {
 
   requestAnimationFrame(frame);
 }
+
+// Re-fit on viewport changes. rAF-coalesced so a burst of resize events does one
+// recompute per paint. H is fixed, so an in-progress game survives: Kanye's X is
+// fixed in H-units and existing pipes keep valid logical coords — only the
+// right-side spawn boundary moves.
+let resizeRAF = 0;
+window.addEventListener('resize', () => {
+  cancelAnimationFrame(resizeRAF);
+  resizeRAF = requestAnimationFrame(applyViewport);
+});
 
 reset();
 requestAnimationFrame((t) => { last = t; frame(t); });

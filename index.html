@@ -8,78 +8,93 @@
 </head>
 <body>
   <div id="stage">
-    <canvas id="bg" width="540" height="960"></canvas>
-    <canvas id="game" width="540" height="960"></canvas>
-    <svg id="kanye" class="kanye" viewBox="-40 -40 80 80" width="80" height="80" aria-hidden="true">
+    <canvas id="bg"></canvas>
+    <canvas id="game"></canvas>
+    <img id="kanye-png" class="kanye" src="assets/kanye.png" alt="" aria-hidden="true" style="display:none" />
+    <svg id="kanye" class="kanye" viewBox="-38 -134 76 84" width="76" height="84" aria-hidden="true">
   <g id="k-root">
-    <!-- back-to-front layers -->
-    <ellipse id="k-shadow" cx="0" cy="34" rx="22" ry="4" fill="rgba(0,0,0,0.35)"/>
+    <!-- Face-only South Park Kanye: head fills the frame, black-top collar with
+         silver chains peeks at the bottom edge as a bust cutoff. -->
 
-    <!-- ears, tucked behind head -->
-    <ellipse cx="-25" cy="2" rx="3" ry="4" fill="#8a5d3d"/>
-    <ellipse cx="25" cy="2" rx="3" ry="4" fill="#8a5d3d"/>
-
-    <!-- shoulders / hoodie collar peek -->
+    <!-- ============ COLLAR (peeks at bottom edge) ============ -->
+    <!-- black top with two silver Cuban-link chains; drawn first so the chin
+         overlaps it. Sits high enough (y≈-62..-50) to show under the crop. -->
     <g id="k-body">
-      <path d="M -24 30 Q 0 42 24 30 L 26 40 L -26 40 Z" fill="#1a1a1a"/>
-      <path d="M -10 28 L -8 34 L 8 34 L 10 28 Z" fill="#ebe6dc"/>
+      <path d="M -38 -62 Q 0 -56 38 -62 L 38 -50 L -38 -50 Z" fill="#0c0c0e"/>
+      <path d="M -16 -60 Q 0 -55 16 -60" stroke="#c4c8ce" stroke-width="2.4"
+            fill="none" stroke-linecap="round" stroke-dasharray="1.3 1.8"/>
+      <path d="M -22 -61 Q 0 -53 22 -61" stroke="#b2b6bd" stroke-width="2.8"
+            fill="none" stroke-linecap="round" stroke-dasharray="1.5 2"/>
     </g>
 
-    <!-- head shape (south park kanye is round-ish with a slight squared jaw) -->
+    <!-- ears at mid-head -->
+    <ellipse cx="-24" cy="-90" rx="3.6" ry="5.2" fill="#90603f"/>
+    <ellipse cx="24" cy="-90" rx="3.6" ry="5.2" fill="#90603f"/>
+    <path d="M -24 -92 Q -22 -90 -24 -88" stroke="#6e4126" stroke-width="0.8" fill="none"/>
+    <path d="M 24 -92 Q 22 -90 24 -88" stroke="#6e4126" stroke-width="0.8" fill="none"/>
+
+    <!-- head: large rounded rectangle, slightly wider jaw, flat-ish chin -->
     <g id="k-head">
-      <path d="M -25 -8 Q -27 14 -22 22 Q -10 30 0 30 Q 10 30 22 22 Q 27 14 25 -8 Z" fill="#a8754f"/>
+      <path d="M -24 -108
+               Q -24.5 -96 -24 -86
+               Q -23.5 -74 -19 -68
+               Q -11 -62 0 -62
+               Q 11 -62 19 -68
+               Q 23.5 -74 24 -86
+               Q 24.5 -96 24 -108
+               Q 13 -114 0 -114
+               Q -13 -114 -24 -108 Z" fill="#9b6440"/>
     </g>
 
-    <!-- jaw — the lower face slab that drops on flap/death (mouth + teeth + goatee live here) -->
+    <!-- eyes: big white South Park ovals touching at center, pupils inner -->
+    <g id="k-eyes">
+      <ellipse cx="-8.5" cy="-92" rx="8.2" ry="9.4" fill="#f4f1ea" stroke="#1a1208" stroke-width="0.7"/>
+      <ellipse cx="8.5"  cy="-92" rx="8.2" ry="9.4" fill="#f4f1ea" stroke="#1a1208" stroke-width="0.7"/>
+      <circle id="k-pupil-l" cx="-2.4" cy="-90" r="1.9" fill="#0a0a0a"/>
+      <circle id="k-pupil-r" cx="2.4"  cy="-90" r="1.9" fill="#0a0a0a"/>
+    </g>
+
+    <!-- eyebrows: thick angled black bars just above the eyes -->
+    <path d="M -16 -102.5 Q -10.5 -104.8 -4.5 -102 L -5 -100.2 Q -10.5 -102.4 -15.5 -100.6 Z" fill="#0c0c0c"/>
+    <path d="M 4.5 -102 Q 10.5 -104.8 16 -102.5 L 15.5 -100.6 Q 10.5 -102.4 5 -100.2 Z" fill="#0c0c0c"/>
+
+    <!-- jaw — small frown + a chin-strap goatee hugging the lower jaw edge.
+         Drops slightly on flap/death. -->
     <g id="k-jaw" transform="translate(0 0)">
-      <!-- goatee (chin + below-lip strip) -->
-      <path d="M -8 18 Q 0 28 8 18 Q 6 22 0 23 Q -6 22 -8 18 Z" fill="#0a0a0a"/>
-      <rect x="-3" y="13" width="6" height="3" fill="#0a0a0a"/>
-      <!-- open mouth with teeth (south park gormless look) -->
-      <path id="k-mouth" d="M -7 14 Q 0 19 7 14 L 6 17 L -6 17 Z" fill="#3a1f0f"/>
-      <rect x="-5" y="14.4" width="10" height="1.5" fill="#ebe6dc"/>
-      <line x1="-2.5" y1="14.4" x2="-2.5" y2="15.9" stroke="#3a1f0f" stroke-width="0.4"/>
-      <line x1="0"    y1="14.4" x2="0"    y2="15.9" stroke="#3a1f0f" stroke-width="0.4"/>
-      <line x1="2.5"  y1="14.4" x2="2.5"  y2="15.9" stroke="#3a1f0f" stroke-width="0.4"/>
+      <!-- soul patch: thin strip just under the lip -->
+      <path d="M -1.6 -77 L 1.6 -77 L 1.2 -73.5 Q 0 -72.8 -1.2 -73.5 Z" fill="#120f0b"/>
+      <!-- small closed downturned mouth -->
+      <path id="k-mouth" d="M -4 -76.5 Q 0 -78.6 4 -76.5" stroke="#3a2113" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+      <!-- goatee: a beard band hugging the bottom of the chin (cheeks clear),
+           drawn as a crescent so skin shows above it — never an open-mouth oval -->
+      <path d="M -9 -70
+               Q -9 -64 0 -63
+               Q 9 -64 9 -70
+               Q 7 -67.5 4 -66.5
+               Q 0 -65.8 -4 -66.5
+               Q -7 -67.5 -9 -70 Z" fill="#120f0b"/>
     </g>
 
-    <!-- nose -->
-    <path d="M -2 4 Q 0 9 2 4" stroke="#7a4a2a" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-
-    <!-- hair — flat-top with hairline. This element keeps id k-cap so the rig
-         code keeps tilting it for liveliness. -->
+    <!-- hair: dark afro with an M-shaped widow's-peak hairline; forehead + temple
+         notches show. Stippled-looking edge. Keeps id k-cap for rig tilt. -->
     <g id="k-cap" transform="rotate(0)">
-      <path d="M -26 -8 Q -27 -22 -18 -26 Q 0 -30 18 -26 Q 27 -22 26 -8 Q 24 -12 16 -12 L -16 -12 Q -24 -12 -26 -8 Z" fill="#0a0a0a"/>
-      <!-- hairline edge above forehead -->
-      <path d="M -20 -10 Q 0 -14 20 -10" stroke="#1a1a1a" stroke-width="0.6" fill="none"/>
-      <!-- side fade hints -->
-      <path d="M -24 -4 Q -26 -8 -24 -12" stroke="#0a0a0a" stroke-width="1" fill="none"/>
-      <path d="M 24 -4 Q 26 -8 24 -12" stroke="#0a0a0a" stroke-width="1" fill="none"/>
-    </g>
-
-    <!-- shutter shades — round red frame, classic Yeezy/glow-in-the-dark era -->
-    <g id="k-glasses">
-      <!-- bright outer frame -->
-      <circle cx="-11" cy="0" r="8.5" fill="#c8221b" stroke="#0a0a0a" stroke-width="0.8"/>
-      <circle cx="11"  cy="0" r="8.5" fill="#c8221b" stroke="#0a0a0a" stroke-width="0.8"/>
-      <!-- bridge -->
-      <rect x="-3" y="-1" width="6" height="2" fill="#c8221b"/>
-      <!-- dark lens slabs sit inside the round frame so slats render against black -->
-      <circle cx="-11" cy="0" r="6.5" fill="#0a0a0a"/>
-      <circle cx="11"  cy="0" r="6.5" fill="#0a0a0a"/>
-      <!-- shutter slats — drawn as horizontal lines, accent color drives crossfade -->
-      <g id="k-slats" stroke="#c8221b" stroke-width="0.9" stroke-linecap="round">
-        <line x1="-17" y1="-3" x2="-5" y2="-3"/>
-        <line x1="-17" y1="-1" x2="-5" y2="-1"/>
-        <line x1="-17" y1="1"  x2="-5" y2="1"/>
-        <line x1="-17" y1="3"  x2="-5" y2="3"/>
-        <line x1="5"   y1="-3" x2="17" y2="-3"/>
-        <line x1="5"   y1="-1" x2="17" y2="-1"/>
-        <line x1="5"   y1="1"  x2="17" y2="1"/>
-        <line x1="5"   y1="3"  x2="17" y2="3"/>
-      </g>
-      <!-- glint sweeps left-to-right across both lenses on every flap -->
-      <rect id="k-glint" x="-18" y="-6" width="4" height="12" fill="rgba(255,255,255,0.55)" opacity="0"/>
+      <path d="M -24 -86
+               Q -26 -100 -22 -109
+               Q -16 -117 -6 -119
+               Q 0 -120 6 -119
+               Q 16 -117 22 -109
+               Q 26 -100 24 -86
+               Q 23 -95 19 -100
+               Q 16 -103 13 -101
+               Q 11 -103 7 -103.5
+               Q 3 -103.8 0 -101.5
+               Q -3 -103.8 -7 -103.5
+               Q -11 -103 -13 -101
+               Q -16 -103 -19 -100
+               Q -23 -95 -24 -86 Z" fill="#15110d"/>
+      <!-- short faded sides over the upper ears -->
+      <path d="M -24 -88 Q -24.5 -82 -22 -79 L -19.5 -80 Q -21 -85 -21 -90 Z" fill="#15110d"/>
+      <path d="M 24 -88 Q 24.5 -82 22 -79 L 19.5 -80 Q 21 -85 21 -90 Z" fill="#15110d"/>
     </g>
   </g>
 </svg>

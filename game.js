@@ -1,14 +1,30 @@
+// H is the fixed logical height (the vertical playable space). W is derived from
+// the viewport aspect ratio on init/resize, so the field widens on a laptop
+// without any vertical physics retuning. Horizontal-flow constants are anchored
+// to H — speed is "screen-heights per second" — so difficulty is identical on
+// every screen and a wide viewport simply reveals more of the same track.
 export const PHYSICS = {
-  W: 540, H: 960,
+  W: 540, H: 960,        // W overwritten by recomputeDims; H is the fixed unit
   GRAVITY: 1400,
   FLAP: -460,
   PIPE_GAP: 280,
-  PIPE_W: 110,
-  PIPE_DX: 190,
-  PIPE_SPAWN: 1.7,
-  KANYE_X: 540 * 0.28,
   KANYE_R: 22,
+  // Derived from H by recomputeDims():
+  PIPE_W: 110,
+  PIPE_DX: 192,
+  PIPE_SPAWN: 1.7,
+  KANYE_X: 173,
 };
+
+// Recompute the playfield width and H-anchored flow constants for a viewport.
+export function recomputeDims(vw, vh) {
+  const H = PHYSICS.H;
+  PHYSICS.W = Math.round(H * (vw / vh));
+  PHYSICS.PIPE_W = H * 0.11;       // ≈106
+  PHYSICS.PIPE_DX = H * 0.20;      // ≈192 px/s, resolution-independent
+  PHYSICS.PIPE_SPAWN = 1.7;        // spacing = PIPE_DX * PIPE_SPAWN ≈ H * 0.34
+  PHYSICS.KANYE_X = H * 0.18;      // ≈173, fixed reaction window (not W*0.28)
+}
 
 export function createGameState() {
   return {

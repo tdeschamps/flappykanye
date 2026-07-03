@@ -1,42 +1,69 @@
 import { PHYSICS } from './game.js';
 
-const SVG_HALF = 40; // SVG is 80px wide, centered
+// Full-body PNG sprite (assets/kanye.png is 241×515). Rendered at a fixed logical
+// height with the collision point (kanye.x,y) aligned to the chest — the visual
+// center of mass — so flying feels fair against the round hitbox.
+const SPRITE_AR = 241 / 515;     // width / height of the source PNG
+const SPRITE_H = 132;            // sprite height in logical units
+const SPRITE_W = SPRITE_H * SPRITE_AR;
+const CHEST_FROM_TOP = 0.42;     // hitbox sits this far down the PNG figure
 
-export function createKanyeRig(svgEl) {
+// Face-only SVG sprite. viewBox is "-38 -134 76 84" (76 wide × 84 tall) cropping
+// the head. The face/eye center sits at SVG-y ≈ -92, i.e. (-92 - -134)/84 = 0.5.
+const SVG_VB_W = 76;
+const SVG_VB_H = 84;
+const SVG_BODY_H = 84;           // rendered head height in logical units
+const SVG_BODY_W = SVG_BODY_H * (SVG_VB_W / SVG_VB_H);
+const SVG_FACE_FROM_TOP = 0.5;   // align hitbox to the eye line
+
+// Pupil rest positions (from the SVG markup) and how far they can dart.
+const PUPIL_L = { x: -2.4, y: -90 };
+const PUPIL_R = { x: 2.4, y: -90 };
+const PUPIL_DART = 1.6;
+
+export function createKanyeRig(el) {
+  const isImg = el.tagName.toLowerCase() === 'img';
   return {
-    root:    svgEl,
-    inner:   svgEl.querySelector('#k-root'),
-    head:    svgEl.querySelector('#k-head'),
-    jaw:     svgEl.querySelector('#k-jaw'),
-    cap:     svgEl.querySelector('#k-cap'),
-    glasses: svgEl.querySelector('#k-glasses'),
-    glint:   svgEl.querySelector('#k-glint'),
-    slats:   [...svgEl.querySelectorAll('#k-slats line')],
-    body:    svgEl.querySelector('#k-body'),
+    root: el,
+    isImg,
+    // SVG sub-parts (null in PNG mode — updateKanyeRig guards on isImg)
+    jaw:     isImg ? null : el.querySelector('#k-jaw'),
+    cap:     isImg ? null : el.querySelector('#k-cap'),
+    eyes:    isImg ? null : el.querySelector('#k-eyes'),
+    pupilL:  isImg ? null : el.querySelector('#k-pupil-l'),
+    pupilR:  isImg ? null : el.querySelector('#k-pupil-r'),
     // Animation state
-    jawDrop: 0,        // 0..1, decays after flap; 1.0 on death
-    glintT: 0,         // 0..1, sweeps right after flap
-    headBob: 0,        // px, decays after flap
-    slatColor: '#b8231c',
+    rot: 0,            // current whole-sprite rotation (deg)
+    jawDrop: 0,        // 0..1, decays after flap; 1.0 on death (SVG only)
+    headBob: 0,        // logical units, decays after flap
     deathTilt: 0,
   };
 }
 
 export function placeKanye(rig, kanye, stageEl) {
-  const sw = stageEl.clientWidth;
-  const sh = stageEl.clientHeight;
-  const px = (kanye.x / PHYSICS.W) * sw - SVG_HALF;
-  const py = (kanye.y / PHYSICS.H) * sh - SVG_HALF;
-  rig.root.style.transform = `translate3d(${px}px, ${(py - rig.headBob).toFixed(2)}px, 0)`;
+  const scale = stageEl.clientHeight / PHYSICS.H;   // logical units → CSS px
+
+  // Sprite dimensions and chest alignment differ between PNG and SVG modes.
+  const bodyW = rig.isImg ? SPRITE_W : SVG_BODY_W;
+  const bodyH = rig.isImg ? SPRITE_H : SVG_BODY_H;
+  const chestFromTop = rig.isImg ? CHEST_FROM_TOP : SVG_FACE_FROM_TOP;
+
+  // Center horizontally on kanye.x; align kanye.y to the chest. Whole-sprite
+  // tilt/spin (rig.rot) pivots about the chest for both modes.
+  const topLeftX = (kanye.x - bodyW / 2) * scale;
+  const topLeftY = (kanye.y - bodyH * chestFromTop - rig.headBob) * scale;
+  rig.root.style.width = `${(bodyW * scale).toFixed(2)}px`;
+  rig.root.style.height = `${(bodyH * scale).toFixed(2)}px`;
+  rig.root.style.transformOrigin = `50% ${(chestFromTop * 100).toFixed(0)}%`;
+  rig.root.style.transform =
+    `translate3d(${topLeftX.toFixed(2)}px, ${topLeftY.toFixed(2)}px, 0) rotate(${rig.rot.toFixed(2)}deg)`;
 }
 
-export function updateKanyeRig(rig, state, dt, accentColor) {
-  // Decays
+export function updateKanyeRig(rig, state, dt) {
   rig.jawDrop = Math.max(0, rig.jawDrop - dt * 4);
-  rig.glintT  = state.mode === 'idle' ? 0 : Math.min(1.2, rig.glintT + dt * 4);
   rig.headBob = Math.max(0, rig.headBob - dt * 50);
 
-  // Body rotation from velocity
+  // Whole-body rotation from velocity (shared by both sprite modes).
   let rot;
   if (state.mode === 'idle') {
     rot = Math.sin(state.t * 3) * 6;
@@ -47,54 +74,50 @@ export function updateKanyeRig(rig, state, dt, accentColor) {
   } else {
     rot = Math.max(-30, Math.min(60, state.kanye.vy * 0.06));
   }
-  rig.inner.setAttribute('transform', `rotate(${rot.toFixed(2)})`);
+  rig.rot = rot;
 
-  // Cap tilt at 30% of body rotation, plus idle drift
-  const capTilt = rot * 0.3 + (state.mode === 'idle' ? Math.sin(state.t * 0.5) * 3 : 0);
-  rig.cap.setAttribute('transform', `rotate(${capTilt.toFixed(2)} 0 -18)`);
+  // Whole-body tilt (rig.rot) is applied in placeKanye via the CSS transform on
+  // the root element — for both modes. The PNG has nothing else to animate.
+  if (rig.isImg) return;
 
-  // Jaw drop
-  const jawY = rig.jawDrop * 6 + (state.mode === 'dead' ? 4 : 0);
+  // Subtle idle head bob on the hair group.
+  const capTilt = (state.mode === 'idle' ? Math.sin(state.t * 0.5) * 3 : 0);
+  rig.cap.setAttribute('transform', `rotate(${capTilt.toFixed(2)} 0 -104)`);
+
+  // Jaw/goatee drops slightly on flap and death.
+  const jawY = rig.jawDrop * 4 + (state.mode === 'dead' ? 4 : 0);
   rig.jaw.setAttribute('transform', `translate(0 ${jawY.toFixed(2)})`);
 
-  // Glint sweep — opacity high during sweep window, x interpolated
-  if (rig.glintT < 1 && rig.glintT > 0) {
-    const op = Math.sin(rig.glintT * Math.PI) * 0.85;
-    const x  = -19 + rig.glintT * 36;
-    rig.glint.setAttribute('opacity', op.toFixed(2));
-    rig.glint.setAttribute('x', x.toFixed(2));
-  } else {
-    rig.glint.setAttribute('opacity', '0');
-  }
-
-  // Slat color crossfade toward chamber accent
-  if (rig.slatColor !== accentColor) {
-    rig.slatColor = accentColor;
-    for (const ln of rig.slats) ln.setAttribute('stroke', accentColor);
-  }
-
-  // Glasses tilt on death
+  // Eyes: pupils dart in the direction of vertical motion; cross/widen on death.
   if (state.mode === 'dead') {
-    rig.glasses.setAttribute('transform', 'rotate(-15)');
+    // Cross-eyed: pupils to inner corners, eyes widen a touch.
+    setPupil(rig.pupilL, PUPIL_L, 1.3, 0.6);
+    setPupil(rig.pupilR, PUPIL_R, -1.3, 0.6);
   } else {
-    rig.glasses.removeAttribute('transform');
+    const vy = state.kanye.vy || 0;
+    const dy = Math.max(-1, Math.min(1, vy / 500)) * PUPIL_DART;   // look down when falling
+    const dx = state.mode === 'idle' ? Math.sin(state.t * 1.5) * 0.6 : 0;
+    setPupil(rig.pupilL, PUPIL_L, dx, dy);
+    setPupil(rig.pupilR, PUPIL_R, dx, dy);
   }
 }
 
+function setPupil(el, rest, dx, dy) {
+  el.setAttribute('cx', (rest.x + dx).toFixed(2));
+  el.setAttribute('cy', (rest.y + dy).toFixed(2));
+}
+
 export function triggerFlap(rig) {
-  rig.jawDrop = 0.7;
-  rig.glintT = 0.01;
+  rig.jawDrop = 0.6;
   rig.headBob = 8;
 }
 
 export function triggerScore(rig) {
-  rig.jawDrop = Math.max(rig.jawDrop, 0.9);
+  rig.jawDrop = Math.max(rig.jawDrop, 0.8);
 }
 
 export function resetKanyeRig(rig) {
   rig.jawDrop = 0;
-  rig.glintT = 0;
   rig.headBob = 0;
   rig.deathTilt = 0;
-  rig.glasses.removeAttribute('transform');
 }

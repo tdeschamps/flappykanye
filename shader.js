@@ -16,6 +16,7 @@ uniform vec2  uApertureSize;
 uniform float uApertureRadius;
 uniform float uFlashIntensity;
 uniform float uShake;
+uniform float uAspect;
 uniform int   uMode;
 
 float hash21(vec2 p) {
@@ -45,19 +46,25 @@ vec3 fieldAt(vec2 uv, float t) {
 
   // Aperture geometry. Breathe size with a slow sin so the portal feels alive.
   // Clamp the radius so it cannot exceed the smaller half-axis (else SDF inverts).
+  // Evaluate in an aspect-corrected space (x scaled by uAspect around center) so
+  // the aperture keeps its shape on a wide viewport instead of stretching.
   float breathe = 1.0 + sin(t * 0.6) * 0.025;
   vec2 apHalf = uApertureSize * 0.5 * breathe;
+  apHalf.x *= uAspect;
   float r = min(uApertureRadius, min(apHalf.x, apHalf.y) * 0.999);
   float apJitter = sin(t * 0.4) * 0.005;
   vec2 apCenter = uAperturePos + vec2(0.0, apJitter);
-  float sd = sdRoundRect(uv, apCenter, apHalf, r);
+  vec2 aUv = uv;
+  aUv.x = 0.5 + (uv.x - 0.5) * uAspect;
+  apCenter.x = 0.5 + (apCenter.x - 0.5) * uAspect;
+  float sd = sdRoundRect(aUv, apCenter, apHalf, r);
 
   // Cheap bloom — sample SDF at offsets, average to soften edges.
   float glow = 0.0;
   for (int i = 0; i < 4; i++) {
     float a = float(i) * 1.5707963;
     vec2 o = vec2(cos(a), sin(a)) * 0.006;
-    glow += smoothstep(0.05, -0.02, sdRoundRect(uv + o, apCenter, apHalf, r));
+    glow += smoothstep(0.05, -0.02, sdRoundRect(aUv + o, apCenter, apHalf, r));
   }
   glow *= 0.25;
 
@@ -152,7 +159,7 @@ export function createShaderBackdrop(canvas) {
   const uniformNames = [
     'uTime', 'uResolution', 'uColorA', 'uColorB', 'uAccent',
     'uAperturePos', 'uApertureSize', 'uApertureRadius',
-    'uFlashIntensity', 'uShake', 'uMode',
+    'uFlashIntensity', 'uShake', 'uAspect', 'uMode',
   ];
   const u = {};
   for (const n of uniformNames) u[n] = gl.getUniformLocation(program, n);
@@ -185,6 +192,7 @@ export function createShaderBackdrop(canvas) {
     if (u.uApertureRadius)  gl.uniform1f(u.uApertureRadius, uniforms.apertureRadius);
     if (u.uFlashIntensity)  gl.uniform1f(u.uFlashIntensity, uniforms.flash);
     if (u.uShake)           gl.uniform1f(u.uShake, uniforms.shake);
+    if (u.uAspect)          gl.uniform1f(u.uAspect, canvas.width / canvas.height);
     if (u.uMode)            gl.uniform1i(u.uMode, uniforms.mode);
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
