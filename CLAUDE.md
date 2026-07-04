@@ -39,3 +39,18 @@ Commit to an approach hard enough to learn what's wrong with it. Then drop it wi
 
 ### 12. Ship
 The unshipped great idea is worth zero. Ship the embarrassing version. Iterate in public.
+
+## Deploy Configuration (configured by /setup-deploy)
+- Platform: GitHub Pages (branch-based, .nojekyll — plain static copy, no build)
+- Production URL: https://tdeschamps.github.io/flappykanye/
+- Deploy workflow: auto-deploy on push to master
+- Deploy status command: gh api repos/tdeschamps/flappykanye/pages/builds/latest --jq '{status, error: .error.message}'
+- Merge method: push to master (single-branch project)
+- Project type: static web game (vanilla JS ES modules, zero deps)
+- Post-deploy health check: curl -sf https://tdeschamps.github.io/flappykanye/ (expect 200)
+
+### Custom deploy hooks
+- Pre-merge: none
+- Deploy trigger: automatic on push to master
+- Deploy status: gh api repos/tdeschamps/flappykanye/pages/builds/latest
+- Health check: https://tdeschamps.github.io/flappykanye/
