@@ -274,45 +274,159 @@ function scorePop() {
 }
 
 // --- Ground + skyline: the journey from Chicago to LA ---
-// Skyline segments are generated as they enter from the right using the
-// CURRENT era's profile — you fly out of Chicago and into LA. Parallax 0.35×.
+// Buildings are BAKED to offscreen sprites at spawn (seeded windows, rooftop
+// details, birth-era tint — the city trails the journey) and generated as
+// they enter from the right using the CURRENT era's profile. Two parallax
+// layers: a hazy far row (0.18×) behind the detailed near row (0.35×).
 let skyline = [];
+let farSkyline = [];
 let groundScroll = 0;
 
-function makeBuilding(x, eraIdx) {
+const BAKE_HEAD = 8;   // sprite headroom for antennas / water towers / billboards
+
+function bakeBuilding(kind, wTex, hTex, seed, era, eraIdx, far) {
+  const cv = document.createElement('canvas');
+  cv.width = wTex + 2;
+  cv.height = hTex + BAKE_HEAD;
+  const c = cv.getContext('2d');
+  const sil = mixRgb(hexToRgb(era.pal.ink), [0, 0, 0], 0.4);
+  const roofC = mixRgb(sil, [255, 255, 255], 0.18);
+  const winLit = mixRgb(hexToRgb(era.pal.rim), [255, 255, 255], 0.35);
+  const top = BAKE_HEAD;
+
+  if (kind === 'palm') {
+    // Curved trunk (three segments leaning right) + radiating fronds.
+    c.fillStyle = rgbToCss(sil, 1);
+    const s = Math.ceil(hTex / 3);
+    c.fillRect(1, top + hTex - s, 1, s);
+    c.fillRect(2, top + hTex - 2 * s, 1, s);
+    c.fillRect(3, top, 1, hTex - 2 * s);
+    const fx = 3, fy = top;
+    c.fillRect(fx - 3, fy - 1, 3, 1);
+    c.fillRect(fx + 1, fy - 1, 3, 1);
+    c.fillRect(fx - 2, fy - 2, 2, 1);
+    c.fillRect(fx + 1, fy - 2, 2, 1);
+    c.fillRect(fx - 1, fy - 3, 3, 1);
+    c.fillRect(fx - 4, fy, 2, 1);
+    c.fillRect(fx + 3, fy, 2, 1);
+    return cv;
+  }
+
+  // Body — towers get the Willis setback profile + lit antenna tips.
+  c.fillStyle = rgbToCss(sil, 1);
+  const stepH = Math.floor(hTex / 3);
+  if (kind === 'tower') {
+    c.fillRect(2, top, wTex - 4, stepH);
+    c.fillRect(0, top + stepH, wTex, hTex - stepH);
+    c.fillRect(3, top - 5, 1, 5);
+    c.fillRect(wTex - 4, top - 4, 1, 4);
+    c.fillStyle = rgbToCss(winLit, 0.9);
+    c.fillRect(3, top - 6, 1, 1);
+    c.fillRect(wTex - 4, top - 5, 1, 1);
+  } else {
+    c.fillRect(0, top, wTex, hTex);
+  }
+
+  // Roofline highlight + right-edge shade (form).
+  c.fillStyle = rgbToCss(roofC, 1);
+  if (kind === 'tower') {
+    c.fillRect(2, top, wTex - 4, 1);
+    c.fillRect(0, top + stepH, wTex, 1);
+  } else {
+    c.fillRect(0, top, wTex, 1);
+  }
+  c.fillStyle = 'rgba(0,0,0,0.25)';
+  c.fillRect(wTex - 1, top + (kind === 'tower' ? stepH : 0), 1, hTex - (kind === 'tower' ? stepH : 0));
+
+  if (far) return cv;   // the haze layer stays detail-free
+
+  // Windows: 3-across / 4-down grid, seeded — stable, no flicker. Chicago
+  // glows at dusk; LA at dawn barely.
+  const litRatio = eraIdx <= 2 ? 0.28 : eraIdx <= 4 ? 0.15 : 0.10;
+  let row = 0;
+  for (let wy = top + 3; wy < top + hTex - 2; wy += 4, row++) {
+    let col = 0;
+    for (let wx = 2; wx < wTex - 2; wx += 3, col++) {
+      if (kind === 'tower' && wy < top + stepH && (wx < 3 || wx > wTex - 5)) continue;
+      const hh = hash01(col * 31 + row * 7, seed);
+      if (hh < litRatio) {
+        c.fillStyle = rgbToCss(winLit, 0.85);
+        c.fillRect(wx, wy, 1, 1);
+      } else if (hh > 0.72) {
+        c.fillStyle = 'rgba(0,0,0,0.3)';
+        c.fillRect(wx, wy, 1, 1);
+      }
+    }
+  }
+
+  // Rooftop life: water towers in Chicago, billboards in LA.
+  if (kind === 'block' && eraIdx <= 2 && hash01(1, seed) < 0.35 && wTex >= 9) {
+    const tx0 = 2 + Math.floor(hash01(2, seed) * (wTex - 7));
+    c.fillStyle = rgbToCss(sil, 1);
+    c.fillRect(tx0, top - 4, 3, 3);
+    c.fillRect(tx0, top - 1, 1, 1);
+    c.fillRect(tx0 + 2, top - 1, 1, 1);
+    c.fillStyle = rgbToCss(roofC, 1);
+    c.fillRect(tx0, top - 4, 3, 1);
+  } else if (kind === 'block' && eraIdx >= 5 && hash01(3, seed) < 0.25 && wTex >= 11) {
+    const bx0 = Math.max(0, Math.floor(wTex / 2) - 5);
+    c.fillStyle = rgbToCss(sil, 1);
+    c.fillRect(bx0 + 4, top - 3, 1, 3);
+    c.fillRect(bx0, top - 7, 9, 4);
+    c.fillStyle = rgbToCss(winLit, 0.9);
+    c.fillRect(bx0, top - 4, 9, 1);
+  }
+  return cv;
+}
+
+function makeBuilding(x, eraIdx, far = false) {
+  const { era } = eraFor(state.score);
   const r = Math.random;
+  let kind, wL, hL, gap;
   if (eraIdx <= 2) {
     // Chicago: dense tall blocks; occasional Willis-style antenna tower.
-    if (r() < 0.14) return { x, w: 34 + r() * 20, h: 110 + r() * 40, kind: 'tower', gap: 6 + r() * 16 };
-    return { x, w: 30 + r() * 55, h: 45 + r() * 70, kind: 'block', gap: 4 + r() * 22 };
-  }
-  if (eraIdx <= 4) {
+    if (r() < 0.14) { kind = 'tower'; wL = 34 + r() * 20; hL = 110 + r() * 40; gap = 6 + r() * 16; }
+    else { kind = 'block'; wL = 30 + r() * 55; hL = 45 + r() * 70; gap = 4 + r() * 22; }
+  } else if (eraIdx <= 4) {
     // Crossing the country: sparser mid-rises.
-    return { x, w: 26 + r() * 50, h: 28 + r() * 55, kind: 'block', gap: 18 + r() * 45 };
+    kind = 'block'; wL = 26 + r() * 50; hL = 28 + r() * 55; gap = 18 + r() * 45;
+  } else {
+    // LA: low sprawl, curved palms, one rare tall landmark.
+    if (r() < 0.22) { kind = 'palm'; wL = 18; hL = 38 + r() * 14; gap = 14 + r() * 30; }
+    else if (r() < 0.05) { kind = 'tower'; wL = 30; hL = 120 + r() * 20; gap = 20 + r() * 30; }
+    else { kind = 'block'; wL = 34 + r() * 60; hL = 16 + r() * 30; gap = 10 + r() * 36; }
   }
-  // LA: low sprawl, palms, one rare tall landmark.
-  if (r() < 0.22) return { x, w: 10, h: 34 + r() * 10, kind: 'palm', gap: 14 + r() * 30 };
-  if (r() < 0.05) return { x, w: 30, h: 120 + r() * 20, kind: 'tower', gap: 20 + r() * 30 };
-  return { x, w: 34 + r() * 60, h: 16 + r() * 30, kind: 'block', gap: 10 + r() * 36 };
+  if (far) { hL *= 0.55; gap *= 1.2; }
+  const wTex = Math.max(4, tx(wL));
+  const hTex = Math.max(3, tx(hL));
+  const seed = r() * 1000;
+  const sprite = bakeBuilding(far && kind === 'palm' ? 'block' : kind, wTex, hTex, seed, era, eraIdx, far);
+  return { x, w: wL, gap, sprite };
+}
+
+function stepLayer(arr, shift, gen) {
+  for (const b of arr) b.x -= shift;
+  while (arr.length && arr[0].x + arr[0].w < -80) arr.shift();
+  const last = arr.length ? arr[arr.length - 1] : null;
+  let edge = last ? last.x + last.w + last.gap : -40;
+  while (edge < PHYSICS.W + 140) {
+    const b = gen(edge);
+    arr.push(b);
+    edge = b.x + b.w + b.gap;
+  }
 }
 
 function stepScenery(dt) {
   const dx = state.tuning.dx * (state.mode === 'playing' ? 1 : 0.12);
   groundScroll += dx * dt;
-  const par = dx * 0.35 * dt;
-  for (const b of skyline) b.x -= par;
-  while (skyline.length && skyline[0].x + skyline[0].w < -60) skyline.shift();
-  let right = skyline.length ? skyline[skyline.length - 1] : null;
-  let edge = right ? right.x + right.w + right.gap : -40;
-  while (edge < PHYSICS.W + 120) {
-    const b = makeBuilding(edge, eraFor(state.score).idx);
-    skyline.push(b);
-    edge = b.x + b.w + b.gap;
-  }
+  const idx = eraFor(state.score).idx;
+  stepLayer(skyline, dx * 0.35 * dt, (e) => makeBuilding(e, idx, false));
+  stepLayer(farSkyline, dx * 0.18 * dt, (e) => makeBuilding(e, idx, true));
 }
 
 function resetScenery() {
   skyline = [];
+  farSkyline = [];
   groundScroll = 0;
 }
 
@@ -321,24 +435,13 @@ function drawScenery(era) {
   const TW = canvas.width;
   const ink = hexToRgb(era.pal.ink);
   const rim = hexToRgb(era.pal.rim);
-  const sil = mixRgb(ink, [0, 0, 0], 0.4);
 
-  // Skyline silhouette, feet on the ground line.
-  ctx.fillStyle = rgbToCss(sil, 0.55);
-  for (const b of skyline) {
-    const bx = tx(b.x), bw = Math.max(2, tx(b.w)), bh = tx(b.h);
-    if (b.kind === 'palm') {
-      ctx.fillRect(bx + Math.floor(bw / 2), gy - bh, 1, bh);          // trunk
-      ctx.fillRect(bx + Math.floor(bw / 2) - 2, gy - bh - 2, 5, 2);   // fronds
-      ctx.fillRect(bx + Math.floor(bw / 2) - 1, gy - bh - 3, 3, 1);
-    } else {
-      ctx.fillRect(bx, gy - bh, bw, bh);
-      if (b.kind === 'tower') {
-        ctx.fillRect(bx + 2, gy - bh - 4, 1, 4);                       // antennas
-        ctx.fillRect(bx + bw - 3, gy - bh - 4, 1, 4);
-      }
-    }
-  }
+  // Far haze row, then the detailed near row — feet on the ground line.
+  ctx.globalAlpha = 0.30;
+  for (const b of farSkyline) ctx.drawImage(b.sprite, tx(b.x), gy - b.sprite.height);
+  ctx.globalAlpha = 0.60;
+  for (const b of skyline) ctx.drawImage(b.sprite, tx(b.x), gy - b.sprite.height);
+  ctx.globalAlpha = 1;
 
   // Ground: rim-lit edge, scrolling stripe lip, dark body.
   ctx.fillStyle = rgbToCss(mixRgb(ink, [0, 0, 0], 0.5), 1);
