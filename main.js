@@ -261,7 +261,7 @@ function stepParts(dt) {
   for (const p of parts) {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    p.vy += 300 * dt;
+    if (!p.float) p.vy += 300 * dt;   // floaters (ego motes) keep rising
     p.life -= dt;
   }
   for (let i = parts.length - 1; i >= 0; i--) if (parts[i].life <= 0) parts.splice(i, 1);
@@ -385,6 +385,7 @@ if (DEBUG) {
   window.__tick = (dt = 1 / 60) => { state.t += dt; update(dt); render(); };
   window.__music = music;
   window.__audio = audio;
+  window.__state = state;
   window.__die = () => { if (state.mode === 'playing') die(); return state.mode; };
   // Autopilot: play N frames steering toward the nearest gap center. Returns
   // mode:score so fairness checks can assert survival.
@@ -435,22 +436,26 @@ function mixRgb(a, b, t) {
 }
 const GOLD_RGB = [255, 215, 0];
 
-// Pre-baked Donda spotlight: checkerboard-dithered diamond falloff, the
-// 16-bit way to draw a soft light. Baked once, stamped every frame.
-const DONDA_HALO = (() => {
+// Pre-baked dithered light: checkerboard diamond falloff — the 16-bit way to
+// draw a soft glow. Baked once per color, stamped every frame.
+function makeDitherHalo(rgb, radius, peakAlpha) {
+  const size = radius * 2 + 1;
   const cv = document.createElement('canvas');
-  cv.width = 37; cv.height = 37;
+  cv.width = size; cv.height = size;
   const c = cv.getContext('2d');
-  for (let y = 0; y < 37; y++) {
-    for (let x = 0; x < 37; x++) {
-      const d = Math.abs(x - 18) + Math.abs(y - 18);
-      if (d > 17 || (x + y) % 2) continue;
-      c.fillStyle = `rgba(232,228,218,${(0.16 * (1 - d / 17)).toFixed(3)})`;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const d = Math.abs(x - radius) + Math.abs(y - radius);
+      if (d > radius - 1 || (x + y) % 2) continue;
+      c.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${(peakAlpha * (1 - d / (radius - 1))).toFixed(3)})`;
       c.fillRect(x, y, 1, 1);
     }
   }
   return cv;
-})();
+}
+const DONDA_HALO = makeDitherHalo([232, 228, 218], 18, 0.16);
+const EGO_HALO = makeDitherHalo([240, 195, 60], 16, 0.5);
+const GRACE_HALO = makeDitherHalo([255, 255, 255], 17, 0.4);
 
 function drawMonolith(p, era, goat) {
   let x = tx(p.x);
@@ -514,6 +519,7 @@ let lastEraKey = 0;
 let interruptFired = false;
 let interruptCardT = 0;
 let egoToastFired = false;
+let egoMoteT = 0;
 let takeoverNext = 7;
 let takeoverT = 0;
 
@@ -599,10 +605,25 @@ function update(dt) {
     if (interruptCardT <= 0 && !state.transition) eraCard.classList.add('hidden');
   }
 
-  // Ego HUD.
+  // Ego HUD + rising gold motes at high confidence.
   egoBar.style.width = `${Math.round(state.ego * 100)}%`;
   egoChip.classList.toggle('on', state.egoX2);
   if (!state.egoX2 && state.ego < 0.05) egoToastFired = false;
+  if (state.mode === 'playing' && state.ego > 0.5) {
+    egoMoteT -= dt;
+    if (egoMoteT <= 0) {
+      egoMoteT = 1.3 - state.ego;
+      parts.push({
+        x: state.kanye.x + (Math.random() - 0.5) * 60,
+        y: state.kanye.y - 40,
+        vx: (Math.random() - 0.5) * 30,
+        vy: -(50 + Math.random() * 70),
+        life: 0.7 + Math.random() * 0.3,
+        rgb: [240, 195, 60],
+        float: true,
+      });
+    }
+  }
   if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 60);
   if (state.flash > 0) state.flash = Math.max(0, state.flash - dt * 2);
   if (state.graceT > 0) state.graceT = Math.max(0, state.graceT - dt);
@@ -668,28 +689,20 @@ function render() {
     ctx.drawImage(DONDA_HALO, px - 18, py - 18);
   }
 
-  // Gold ego aura: a ring that thickens as the head inflates.
-  if (state.ego > 0.15 && state.mode === 'playing') {
+  // Gold ego glow: a soft dithered light that brightens as the head inflates.
+  if (state.ego > 0.25 && state.mode === 'playing') {
     const px = tx(state.kanye.x), py = tx(state.kanye.y);
-    const a = 0.35 * state.ego;
-    const r = 13 + Math.round(state.ego * 4);
-    ctx.fillStyle = `rgba(240,195,60,${a})`;
-    ctx.fillRect(px - r, py - r, r * 2, 1);
-    ctx.fillRect(px - r, py + r - 1, r * 2, 1);
-    ctx.fillRect(px - r, py - r, 1, r * 2);
-    ctx.fillRect(px + r - 1, py - r, 1, r * 2);
+    ctx.globalAlpha = Math.min(1, state.ego);
+    ctx.drawImage(EGO_HALO, px - 16, py - 16);
+    ctx.globalAlpha = 1;
   }
 
-  // Boundary grace: a pulsing 1-texel ring around the sprite — "can't die yet".
+  // Boundary grace: a pulsing white light behind the sprite — "can't die yet".
   if (state.graceT > 0 && state.mode === 'playing') {
     const px = tx(state.kanye.x), py = tx(state.kanye.y);
-    const a = Math.max(0, 0.5 * Math.min(1, state.graceT) * (0.65 + 0.35 * Math.sin(state.t * 12)));
-    const r = 15;
-    ctx.fillStyle = `rgba(255,255,255,${a})`;
-    ctx.fillRect(px - r, py - r, r * 2, 1);
-    ctx.fillRect(px - r, py + r - 1, r * 2, 1);
-    ctx.fillRect(px - r, py - r, 1, r * 2);
-    ctx.fillRect(px + r - 1, py - r, 1, r * 2);
+    ctx.globalAlpha = Math.max(0, Math.min(1, state.graceT) * (0.65 + 0.35 * Math.sin(state.t * 12)));
+    ctx.drawImage(GRACE_HALO, px - 17, py - 17);
+    ctx.globalAlpha = 1;
   }
 
   // Particles: 1-texel motes with life-faded alpha.
