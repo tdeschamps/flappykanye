@@ -1,10 +1,13 @@
-// Procedural era soundtrack — seven beds, one scheduler, zero assets.
+// Procedural era soundtrack — seven tracks, one scheduler, zero assets.
 //
-// A bed is pure data: bpm + sustained voices + 16-step tracks. Voice renderers
-// are small factory functions that schedule one event's worth of sound into
-// the bed's own GainNode, which feeds audio.js's clean music bus. On era
-// change the old bed ramps out while the new ramps in (max two beds alive).
-// Yeezus deliberately routes its bass stabs through the SFX distortion.
+// Sound direction (round 2): drone-first. The backbone of every era is the
+// ORIGINAL bed that shipped with the game — two detuned saws through an
+// LFO-swept lowpass into the waveshaper distortion — dark, hypnotic,
+// installation music. Each era tints the drone (root, cutoff, color) and adds
+// at most two sparse accents. Yeezus is the original, verbatim, nothing else.
+//
+// A bed is pure data: bpm + sustained voices + 16-step tracks. On era change
+// the old bed ramps out while the new ramps in (max two beds alive).
 
 import * as audio from './audio.js';
 
@@ -12,94 +15,98 @@ const SEMI = (n) => Math.pow(2, n / 12);
 const BAR_STEPS = 16;
 
 // ---------------- Bed specs (data only) ----------------
-// chords: arrays of semitone offsets from root, one per bar (looping).
-// tracks: { voice, pattern[16], params, everyBars? } — pattern values are velocity.
+// chords: semitone offsets from root, one per bar (looping) — they are the
+// tonal centers for stabs/pads and for scale-quantized score SFX.
 const BEDS = {
+  // THE COLLEGE DROPOUT — dusty soul in a dark room: warm drone, one worn
+  // minor-7 stab every other bar, lazy boom-bap thump and brushed snare.
   dropout: {
-    bpm: 84, root: 233.08, swing: 0.16,
-    chords: [[0, 4, 7, 11], [-3, 0, 4, 7], [-7, -3, 0, 5], [-5, -1, 2, 7]],
-    sustained: [{ voice: 'sub', params: { offset: -24, gain: 0.05 } }],
+    bpm: 84, root: 58.27, swing: 0.14,
+    chords: [[0, 3, 7, 10], [-4, 0, 3, 7], [-7, -4, 0, 5], [-2, 2, 5, 8]],
+    sustained: [{ voice: 'drone', params: { cutoff: 700, gain: 0.045, sfx: true, lfoDepth: 250 } }],
     tracks: [
-      { voice: 'chordStab', pattern: [1, 0, 0, 0, 0, 0, .8, 0, 0, 0, 0, 0, 1, 0, 0, 0],
-        params: { type: 'triangle', dur: 0.5, lp: 1800, warble: 12, gain: 0.16 } },
-      { voice: 'chordStab', pattern: [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], everyBars: 4,
-        params: { type: 'triangle', dur: 0.22, lp: 3200, octave: 12, warble: 20, gain: 0.12 } },
-      { voice: 'noiseHit', pattern: [0, 0, .5, 0, 0, .4, 0, 0, 0, .5, 0, 0, 0, 0, .4, 0],
-        params: { freq: 6000, q: 0.6, dur: 0.02, gain: 0.018, type: 'highpass' } },
+      { voice: 'chordStab', pattern: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], everyBars: 2,
+        params: { type: 'triangle', dur: 1.4, lp: 1100, warble: 12, octave: 24, gain: 0.09 } },
+      { voice: 'kick', pattern: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, .7, 0, 0, 0, 0, 0],
+        params: { f0: 110, f1: 44, dur: 0.22, gain: 0.26 } },
+      { voice: 'noiseHit', pattern: [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+        params: { freq: 1600, q: 1.1, dur: 0.13, gain: 0.08 } },
     ],
   },
+  // GRADUATION — the stadium at night: brighter drone, one slow light-sweep
+  // swell per bar, dubby kick on the downbeat.
   graduation: {
-    bpm: 116, root: 261.63, swing: 0,
-    chords: [[0], [0], [-3], [-5]],
-    sustained: [{ voice: 'pad', params: { offsets: [0, 4, 7], type: 'sawtooth', lp: 900, gain: 0.045 } }],
+    bpm: 96, root: 82.41, swing: 0,
+    chords: [[0, 3, 7], [-2, 2, 5], [3, 7, 10], [-4, 0, 3]],
+    sustained: [{ voice: 'drone', params: { cutoff: 1000, gain: 0.04, sfx: true, lfoRate: 0.09, lfoDepth: 420 } }],
     tracks: [
-      { voice: 'arp', pattern: [1, .6, .8, .6, 1, .6, .8, .6, 1, .6, .8, .6, 1, .6, .8, .6],
-        params: { degrees: [0, 2, 4, 7, 9, 12, 14, 12, 9, 7], type: 'square', dur: 0.11, lp: 2600, gain: 0.055, delay: true } },
-      { voice: 'kick', pattern: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
-        params: { f0: 130, f1: 48, dur: 0.16, gain: 0.30 } },
+      { voice: 'swell', pattern: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        params: { f0: 220, f1: 1500, dur: 2.0, octave: 12, gain: 0.045 } },
+      { voice: 'kick', pattern: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        params: { f0: 100, f1: 40, dur: 0.3, gain: 0.2 } },
     ],
   },
+  // 808s & HEARTBREAK — the cold room: hollow triangle drone with a fifth,
+  // the literal heartbeat, one lonely autotune glide every eight bars.
   heartbreak: {
-    bpm: 60, root: 174.61, swing: 0,
+    bpm: 60, root: 92.5, swing: 0,
     chords: [[0], [0], [-4], [-4]],
-    sustained: [{ voice: 'pad', params: { offsets: [0, 7], type: 'sine', lp: 700, gain: 0.06 } }],
+    sustained: [{ voice: 'drone', params: { type: 'triangle', cutoff: 600, gain: 0.05, fifth: true, lfoDepth: 150 } }],
     tracks: [
       { voice: 'heartbeat', pattern: [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
         params: { f0: 92, f1: 38, dur: 0.30, gain: 0.42 } },
       { voice: 'lead', pattern: [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], everyBars: 8,
-        params: { degrees: [7, 5, 3, 0], type: 'square', dur: 2.4, lp: 1200, glide: 0.18, gain: 0.05 } },
+        params: { degrees: [19, 17, 15, 12], type: 'square', dur: 2.4, lp: 1200, glide: 0.18, gain: 0.04 } },
     ],
   },
+  // MBDTF — dark opulence: driven drone with a fifth, timpani on the bar,
+  // a slow minor string swell every other bar.
   mbdtf: {
-    bpm: 90, root: 130.81, swing: 0,
-    chords: [[0, 3, 7], [8, 12, 15], [3, 7, 10], [10, 14, 17]],
-    sustained: [{ voice: 'sub', params: { offset: -12, gain: 0.05 } }],
+    bpm: 90, root: 65.41, swing: 0,
+    chords: [[0, 3, 7], [8, 12, 15], [3, 7, 10], [10, 13, 17]],
+    sustained: [{ voice: 'drone', params: { cutoff: 750, gain: 0.05, fifth: true, sfx: true } }],
     tracks: [
-      { voice: 'chordPad', pattern: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        params: { type: 'sawtooth', detune: 9, attack: 0.5, dur: 2.6, lp: 850, gain: 0.10 } },
       { voice: 'kick', pattern: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        params: { f0: 68, f1: 34, dur: 0.5, gain: 0.34, noise: true } },
-      { voice: 'arp', pattern: [0, 0, 0, 0, 0, 0, 0, 0, 0, .5, .4, .5, 0, .4, 0, .5], everyBars: 2,
-        params: { degrees: [12, 15, 19, 24, 19, 15], type: 'sine', dur: 0.4, lp: 5200, gain: 0.035, fm: 2.01 } },
+        params: { f0: 68, f1: 34, dur: 0.5, gain: 0.3, noise: true } },
+      { voice: 'chordPad', pattern: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], everyBars: 2,
+        params: { type: 'sawtooth', detune: 9, attack: 1.4, dur: 4.6, lp: 900, octave: 12, gain: 0.07 } },
     ],
   },
+  // YEEZUS — the original bed, verbatim. Two saws at 55/55.4Hz through the
+  // swept lowpass into the distortion. Perfect already; touch nothing.
   yeezus: {
-    bpm: 130, root: 65.41, swing: 0,
+    bpm: 130, root: 55, swing: 0,
     chords: [[0], [0], [3], [5]],
-    silentBars: 8,   // every 8th bar hard-mutes: the Yeezus stop
-    sustained: [],
-    tracks: [
-      { voice: 'bassStab', pattern: [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0],
-        params: { type: 'square', dur: 0.14, gain: 0.30, sfxBus: true } },
-      { voice: 'noiseHit', pattern: [0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0],
-        params: { freq: 3000, q: 8, dur: 0.05, gain: 0.06 } },
-      { voice: 'siren', pattern: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], everyBars: 4,
-        params: { f0: 200, f1: 780, dur: 1.6, gain: 0.045 } },
-    ],
+    sustained: [{ voice: 'drone', params: { cutoff: 800, gain: 0.05, sfx: true, lfoRate: 0.07, lfoDepth: 350, detuneRatio: 55.4 / 55 } }],
+    tracks: [],
   },
+  // TLOP / YE — gospel at dusk: warm drone, somber minor-plagal pads,
+  // a single soft clap on the 3.
   pablo: {
-    bpm: 72, root: 174.61, swing: 0.08,
-    chords: [[0, 4, 7], [-5, -1, 2], [-8, -5, 0], [-10, -6, -3]],
-    sustained: [{ voice: 'sub', params: { offset: -24, gain: 0.05 } }],
+    bpm: 70, root: 87.31, swing: 0.08,
+    chords: [[0, 3, 7], [-5, -2, 2], [3, 7, 10], [-7, -4, 0]],
+    sustained: [{ voice: 'drone', params: { cutoff: 800, gain: 0.04, lfoDepth: 220 } }],
     tracks: [
-      { voice: 'choir', pattern: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        params: { attack: 0.6, dur: 3.0, gain: 0.10 } },
-      { voice: 'noiseHit', pattern: [0, 0, .4, 0, 0, 0, .4, 0, 0, 0, .4, 0, 0, 0, .4, 0],
-        params: { freq: 7200, q: 0.8, dur: 0.05, gain: 0.02, type: 'highpass' } },
+      { voice: 'chordPad', pattern: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], everyBars: 2,
+        params: { type: 'triangle', detune: 6, attack: 0.8, dur: 3.4, lp: 1300, octave: 12, gain: 0.08 } },
+      { voice: 'noiseHit', pattern: [0, 0, 0, 0, 0, 0, 0, 0, .8, 0, 0, 0, 0, 0, 0, 0],
+        params: { freq: 1200, q: 1.0, dur: 0.09, gain: 0.045 } },
     ],
   },
+  // DONDA — void liturgy: the additive organ swell, a sub pulse every other
+  // bar, one distant bell rarely.
   donda: {
-    bpm: 52, root: 116.54, swing: 0,
+    bpm: 52, root: 58.27, swing: 0,
     chords: [[0, 7, 12], [0, 7, 12], [0, 5, 12], [0, 7, 10]],
     sustained: [
       { voice: 'organ', params: { gain: 0.09 } },
-      { voice: 'sub', params: { offset: -24, gain: 0.06 } },
+      { voice: 'drone', params: { type: 'triangle', cutoff: 400, gain: 0.035, lfoDepth: 120 } },
     ],
     tracks: [
       { voice: 'kick', pattern: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], everyBars: 2,
         params: { f0: 55, f1: 29, dur: 0.9, gain: 0.22 } },
-      { voice: 'arp', pattern: [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], everyBars: 16,
-        params: { degrees: [19], type: 'sine', dur: 2.0, lp: 4000, gain: 0.04, fm: 1.5 } },
+      { voice: 'arp', pattern: [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], everyBars: 32,
+        params: { degrees: [19], type: 'sine', dur: 2.0, lp: 4000, gain: 0.035, fm: 1.5 } },
     ],
   },
 };
@@ -143,7 +150,7 @@ const VOICES = {
       for (const dt of [-P.detune, P.detune]) {
         const o = bed.ctx.createOscillator();
         o.type = P.type;
-        o.frequency.value = bed.spec.root * SEMI(off);
+        o.frequency.value = bed.spec.root * SEMI(off + (P.octave || 0));
         o.detune.value = dt;
         o.connect(lp);
         o.start(when); o.stop(when + P.dur + 0.1);
@@ -155,8 +162,7 @@ const VOICES = {
     const g = envGain(bed.ctx, bed.out, when, P.gain * vel, 0.004, P.dur);
     const lp = bed.ctx.createBiquadFilter();
     lp.type = 'lowpass'; lp.frequency.value = P.lp;
-    lp.connect(P.delay ? bed.delayIn : g);
-    if (P.delay) bed.delayIn.connect(g); // dry through the same envelope
+    lp.connect(g);
     const o = bed.ctx.createOscillator();
     o.type = P.type;
     o.frequency.value = bed.spec.root * SEMI(deg + bed.chord()[0]);
@@ -172,7 +178,7 @@ const VOICES = {
     o.start(when); o.stop(when + P.dur + 0.05);
   },
   lead(bed, when, vel, P) {
-    // Portamento autotune caricature: glides through degrees in quantized steps.
+    // Portamento autotune caricature: glides through degrees in hard steps.
     const g = envGain(bed.ctx, bed.out, when, P.gain * vel, 0.05, P.dur);
     const lp = bed.ctx.createBiquadFilter();
     lp.type = 'lowpass'; lp.frequency.value = P.lp;
@@ -200,22 +206,8 @@ const VOICES = {
     if (P.noise) VOICES.noiseHit(bed, when, vel * 0.5, { freq: 900, q: 0.7, dur: 0.08, gain: P.gain * 0.25 });
   },
   heartbeat(bed, when, vel, P) {
-    VOICES.kick(bed, when, vel, P);                              // lub
+    VOICES.kick(bed, when, vel, P);                                       // lub
     VOICES.kick(bed, when + 0.12, vel * 0.55, { ...P, f0: P.f0 * 0.85 }); // DUB
-  },
-  bassStab(bed, when, vel, P) {
-    const out = P.sfxBus ? audio.getSfxBus() : bed.out;
-    const g = bed.ctx.createGain();
-    g.gain.setValueAtTime(0.0001, when);
-    g.gain.exponentialRampToValueAtTime(P.gain * vel, when + 0.004);
-    g.gain.exponentialRampToValueAtTime(0.0001, when + P.dur);
-    g.connect(out);
-    bed.stabs = bed.stabs || 0;
-    const o = bed.ctx.createOscillator();
-    o.type = P.type;
-    o.frequency.value = bed.spec.root * SEMI(bed.chord()[0] + [0, 0, 3, 5][bed.stabs++ % 4]);
-    o.connect(g);
-    o.start(when); o.stop(when + P.dur + 0.03);
   },
   noiseHit(bed, when, vel, P) {
     const ctx = bed.ctx;
@@ -230,71 +222,62 @@ const VOICES = {
     src.connect(f).connect(g);
     src.start(when); src.stop(when + P.dur + 0.02);
   },
-  siren(bed, when, vel, P) {
-    const g = envGain(bed.ctx, bed.out, when, P.gain * vel, 0.3, P.dur);
+  swell(bed, when, vel, P) {
+    // A slow bandpass opening over a chord-rooted saw — stadium lights.
+    const g = envGain(bed.ctx, bed.out, when, P.gain * vel, P.dur * 0.5, P.dur);
+    const bp = bed.ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(P.f0, when);
+    bp.frequency.exponentialRampToValueAtTime(P.f1, when + P.dur * 0.85);
+    bp.connect(g);
     const o = bed.ctx.createOscillator();
     o.type = 'sawtooth';
-    o.frequency.setValueAtTime(P.f0, when);
-    o.frequency.exponentialRampToValueAtTime(P.f1, when + P.dur * 0.9);
-    o.connect(g);
+    o.frequency.value = bed.spec.root * SEMI(bed.chord()[0] + (P.octave || 0));
+    o.connect(bp);
     o.start(when); o.stop(when + P.dur + 0.05);
-  },
-  choir(bed, when, vel, P) {
-    const chord = bed.chord();
-    const g = envGain(bed.ctx, bed.out, when, P.gain * vel, P.attack, P.dur);
-    // Two formant bandpasses ≈ "ahh".
-    const f1 = bed.ctx.createBiquadFilter();
-    f1.type = 'bandpass'; f1.frequency.value = 700; f1.Q.value = 1.1;
-    const f2 = bed.ctx.createBiquadFilter();
-    f2.type = 'bandpass'; f2.frequency.value = 1200; f2.Q.value = 1.3;
-    f1.connect(g); f2.connect(g);
-    const vib = bed.ctx.createOscillator();
-    const vibG = bed.ctx.createGain();
-    vib.frequency.value = 5; vibG.gain.value = 4;
-    vib.connect(vibG);
-    for (const off of chord) {
-      for (const dt of [-6, 5]) {
-        const o = bed.ctx.createOscillator();
-        o.type = 'sawtooth';
-        o.frequency.value = bed.spec.root * SEMI(off);
-        o.detune.value = dt;
-        vibG.connect(o.detune);
-        o.connect(f1); o.connect(f2);
-        o.start(when); o.stop(when + P.dur + 0.1);
-      }
-    }
-    vib.start(when); vib.stop(when + P.dur + 0.1);
   },
 };
 
 // Sustained voices live for the bed's whole life.
 const SUSTAINED = {
-  sub(bed, P) {
-    const g = bed.ctx.createGain(); g.gain.value = P.gain;
-    const o = bed.ctx.createOscillator();
-    o.type = 'sine';
-    o.frequency.value = bed.spec.root * SEMI(P.offset);
-    o.connect(g).connect(bed.out);
-    o.start();
-    return [o, g];
-  },
-  pad(bed, P) {
-    const g = bed.ctx.createGain(); g.gain.value = P.gain;
-    const lp = bed.ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = P.lp;
-    lp.connect(g).connect(bed.out);
+  // The backbone: the original startBed, parameterized. Two detuned saws
+  // (optionally + a fifth) through an LFO-swept lowpass; sfx:true inserts the
+  // waveshaper distortion locally so the era crossfade still owns the level.
+  drone(bed, P) {
+    const ctx = bed.ctx;
+    const g = ctx.createGain(); g.gain.value = P.gain;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = P.cutoff; lp.Q.value = 0.6;
     const nodes = [g, lp];
-    for (const off of P.offsets) {
-      for (const dt of [-5, 4]) {
-        const o = bed.ctx.createOscillator();
-        o.type = P.type;
-        o.frequency.value = bed.spec.root * SEMI(off);
-        o.detune.value = dt;
-        o.connect(lp);
-        o.start();
-        nodes.push(o);
-      }
+    let head = g;
+    if (P.sfx) {
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = audio.makeDistortionCurve(40);
+      shaper.oversample = '4x';
+      lp.connect(shaper).connect(g);
+      nodes.push(shaper);
+    } else {
+      lp.connect(g);
     }
+    g.connect(bed.out);
+    const root = bed.spec.root * SEMI(bed.transpose);
+    const freqs = [root, root * (P.detuneRatio || 1.007)];
+    if (P.fifth) freqs.push(root * 1.5);
+    for (const f of freqs) {
+      const o = ctx.createOscillator();
+      o.type = P.type || 'sawtooth';
+      o.frequency.value = f;
+      o.connect(lp);
+      o.start();
+      nodes.push(o);
+    }
+    const lfo = ctx.createOscillator();
+    const lfoG = ctx.createGain();
+    lfo.frequency.value = P.lfoRate ?? 0.07;
+    lfoG.gain.value = P.lfoDepth ?? 350;
+    lfo.connect(lfoG).connect(lp.frequency);
+    lfo.start();
+    nodes.push(lfo, lfoG);
     return nodes;
   },
   organ(bed, P) {
@@ -306,11 +289,12 @@ const SUSTAINED = {
     lfo.connect(lfoG).connect(g.gain);
     g.connect(bed.out);
     const nodes = [g, lfo, lfoG];
+    const root = bed.spec.root * SEMI(bed.transpose);
     for (const [partial, pg] of [[1, 1], [2, 0.5], [3, 0.3], [4, 0.2], [6, 0.12], [8, 0.08]]) {
       const og = bed.ctx.createGain(); og.gain.value = pg;
       const o = bed.ctx.createOscillator();
       o.type = 'sine';
-      o.frequency.value = bed.spec.root * partial;
+      o.frequency.value = root * partial;
       o.connect(og).connect(g);
       o.start();
       nodes.push(o, og);
@@ -325,9 +309,9 @@ let current = null;    // active bed
 let fading = null;     // previous bed while it ramps out
 let timer = 0;
 let started = false;
-let modeGain = 1;      // 0.4 on the title screen, 1 in play
+let modeGain = 1;      // 0.45 on the title screen, 1 in play
 
-function makeBed(id) {
+function makeBed(id, transpose = 0) {
   const ctx = audio.getCtx();
   const spec = BEDS[id];
   const out = ctx.createGain();
@@ -340,17 +324,9 @@ function makeBed(id) {
     nextTime: ctx.currentTime + 0.06,
     arpIdx: 0,
     startTime: ctx.currentTime,
-    transpose: 0,
+    transpose,
     chord() { return this.spec.chords[this.bar % this.spec.chords.length].map(o => o + this.transpose); },
   };
-  // Shared feedback delay for arps that ask for it.
-  bed.delayIn = ctx.createGain();
-  const d = ctx.createDelay(1);
-  d.delayTime.value = 60 / spec.bpm / 2;
-  const fb = ctx.createGain(); fb.gain.value = 0.3;
-  bed.delayIn.connect(d); d.connect(fb).connect(d);
-  d.connect(bed.out);
-  bed.sustainedExtra = [d, fb, bed.delayIn];
   for (const s of spec.sustained) bed.sustained.push(...SUSTAINED[s.voice](bed, s.params));
   return bed;
 }
@@ -358,15 +334,12 @@ function makeBed(id) {
 function scheduleBed(bed, horizon) {
   const stepDur = 60 / bed.spec.bpm / 4;
   while (bed.nextTime < horizon) {
-    const silent = bed.spec.silentBars && (bed.bar % bed.spec.silentBars === bed.spec.silentBars - 1) && bed.step < 8;
-    if (!silent) {
-      for (const tr of bed.spec.tracks) {
-        const vel = tr.pattern[bed.step];
-        if (!vel) continue;
-        if (tr.everyBars && bed.bar % tr.everyBars !== 0) continue;
-        const swing = (bed.step % 2 === 1) ? (bed.spec.swing || 0) * stepDur : 0;
-        VOICES[tr.voice](bed, bed.nextTime + swing, vel, tr.params);
-      }
+    for (const tr of bed.spec.tracks) {
+      const vel = tr.pattern[bed.step];
+      if (!vel) continue;
+      if (tr.everyBars && bed.bar % tr.everyBars !== 0) continue;
+      const swing = (bed.step % 2 === 1) ? (bed.spec.swing || 0) * stepDur : 0;
+      VOICES[tr.voice](bed, bed.nextTime + swing, vel, tr.params);
     }
     bed.step = (bed.step + 1) % BAR_STEPS;
     if (bed.step === 0) bed.bar++;
@@ -375,7 +348,7 @@ function scheduleBed(bed, horizon) {
 }
 
 function killBed(bed) {
-  for (const n of [...bed.sustained, ...bed.sustainedExtra]) {
+  for (const n of bed.sustained) {
     try { if (n.stop) n.stop(); n.disconnect(); } catch (e) { /* already gone */ }
   }
   try { bed.out.disconnect(); } catch (e) { /* already gone */ }
@@ -402,8 +375,8 @@ export function stop() {
   if (fading) { killBed(fading); fading = null; }
 }
 
-// Switch beds with a crossfade. lap transposes everything up a semitone per
-// GOAT lap — cheap escalating mania.
+// Switch beds with a crossfade. GOAT laps transpose the whole bed up a
+// semitone per lap — cheap escalating mania.
 export function setEra(idx, lap = 0) {
   const ids = ['dropout', 'graduation', 'heartbreak', 'mbdtf', 'yeezus', 'pablo', 'donda'];
   const id = ids[idx % ids.length];
@@ -417,9 +390,8 @@ export function setEra(idx, lap = 0) {
     const dead = fading;
     setTimeout(() => { if (fading === dead) { killBed(dead); fading = null; } else killBed(dead); }, 2600);
   }
-  current = makeBed(id);
+  current = makeBed(id, lap);
   current.lapN = lap;
-  current.transpose = lap;
   current.out.gain.setTargetAtTime(0.9 * modeGain, ctx.currentTime + 0.1, 0.7);
 }
 

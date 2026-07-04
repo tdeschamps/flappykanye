@@ -10,7 +10,7 @@ let muted = localStorage.getItem('flappykanye_muted') === '1';
 const PHRYGIAN = [55, 52.2, 49, 46.25, 43.65, 41.2, 38.9];
 let flapIdx = 0;
 
-function makeDistortionCurve(amount = 60) {
+export function makeDistortionCurve(amount = 60) {
   const n = 256;
   const curve = new Float32Array(n);
   const k = amount;
@@ -65,7 +65,7 @@ function ensureCtx() {
   // Music bus: clean into the limiter (SFX keep the waveshaper grit; music
   // doesn't want it), with a small send to the shared plate.
   musicBus = ctx.createGain();
-  musicBus.gain.value = 0.8;
+  musicBus.gain.value = 0.65;
   musicBus.connect(limiter);
   const plateSend = ctx.createGain();
   plateSend.gain.value = 0.10;
