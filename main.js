@@ -457,6 +457,17 @@ const DONDA_HALO = makeDitherHalo([232, 228, 218], 18, 0.16);
 const EGO_HALO = makeDitherHalo([240, 195, 60], 16, 0.5);
 const GRACE_HALO = makeDitherHalo([255, 255, 255], 17, 0.4);
 
+// 2×2 checkerboard shadow pattern for 16-bit dither shading (baked once).
+const SHADOW_PAT = (() => {
+  const cv = document.createElement('canvas');
+  cv.width = 2; cv.height = 2;
+  const c = cv.getContext('2d');
+  c.fillStyle = 'rgba(0,0,0,0.30)';
+  c.fillRect(0, 0, 1, 1);
+  c.fillRect(1, 1, 1, 1);
+  return ctx.createPattern(cv, 'repeat');
+})();
+
 function drawMonolith(p, era, goat) {
   let x = tx(p.x);
   const w = Math.max(2, tx(PHYSICS.PIPE_W));
@@ -477,41 +488,91 @@ function drawMonolith(p, era, goat) {
     const approach = Math.max(0, Math.min(1, 1 - (p.x - state.kanye.x) / (PHYSICS.H * 0.55)));
     rimA = 0.15 + 0.75 * approach;
     mouthA = 0.1 + 0.8 * approach;
+    inkA = 0.5 + 0.5 * approach;
   }
-  // 808s: the rim throbs with the heartbeat.
+  // 808s: rims + LED throb with the heartbeat.
+  let lub = 0;
   if (p.kind === 'pulse') {
-    const beat = state.t % 1;
-    const lub = Math.max(0, Math.sin(beat * Math.PI * 6)) * Math.max(0, 1 - beat * 2.2);
+    const beat = state.beatPhase ?? (state.t % 1);
+    lub = Math.max(0, Math.sin(beat * Math.PI * 6)) * Math.max(0, 1 - beat * 2.2);
     rimA = 0.35 + 0.6 * lub;
   }
 
-  // Chunky slab body with a subtle left bevel.
-  ctx.globalAlpha = inkA;
-  ctx.fillStyle = ink;
-  ctx.fillRect(x, 0, w, topH);
-  ctx.fillRect(x, botY, w, botH);
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(255,255,255,0.07)';
-  ctx.fillRect(x, 0, 1, topH);
-  ctx.fillRect(x, botY, 1, botH);
+  // One column segment; gapSide = 'bottom' for the top slab, 'top' for the
+  // bottom slab. Draws body, shading, era detail, then the lintel cap.
+  const seg = (y0, h, gapSide) => {
+    if (h <= 0) return;
 
-  // 1-texel rim on the lit (right) edge; MBDTF gets a gilded double rule.
-  ctx.fillStyle = rgbToCss(rim, rimA);
-  ctx.fillRect(x + w - 1, 0, 1, topH);
-  ctx.fillRect(x + w - 1, botY, 1, botH);
-  if (p.kind === 'drift') {
-    ctx.fillStyle = rgbToCss(rim, rimA * 0.5);
-    ctx.fillRect(x + w - 3, 0, 1, topH);
-    ctx.fillRect(x + w - 3, botY, 1, botH);
-  }
+    // Body.
+    ctx.globalAlpha = inkA;
+    ctx.fillStyle = ink;
+    ctx.fillRect(x, y0, w, h);
 
-  // Gap mouths: hard 1-texel light line + a dimmer step — pixel bloom.
-  ctx.fillStyle = rgbToCss(rim, mouthA);
-  ctx.fillRect(x, topH - 1, w, 1);
-  ctx.fillRect(x, botY, w, 1);
-  ctx.fillStyle = rgbToCss(rim, mouthA * 0.35);
-  ctx.fillRect(x, topH - 2, w, 1);
-  ctx.fillRect(x, botY + 1, w, 1);
+    // Right-third checkerboard shadow — cylindrical depth.
+    ctx.fillStyle = SHADOW_PAT;
+    const shW = Math.max(2, Math.floor(w / 3));
+    ctx.fillRect(x + w - 1 - shW, y0, shW, h);
+    ctx.globalAlpha = 1;
+
+    // Left light bevel: the aperture light catching the edge.
+    const bevelA = p.kind === 'wave' ? 0.22 : 0.12;   // Pablo: dawn-lit side
+    ctx.fillStyle = rgbToCss(rim, bevelA * inkA);
+    ctx.fillRect(x, y0, 1, h);
+    ctx.fillStyle = `rgba(255,255,255,${0.05 * inkA})`;
+    ctx.fillRect(x + 1, y0, 1, h);
+
+    // Lit right edge.
+    ctx.fillStyle = rgbToCss(rim, rimA);
+    ctx.fillRect(x + w - 1, y0, 1, h);
+
+    // --- Era details ---
+    if (p.kind === 'static') {
+      // Dropout: diploma pinstripes.
+      ctx.fillStyle = rgbToCss(rim, 0.20 * inkA);
+      ctx.fillRect(x + 3, y0, 1, h);
+      ctx.fillRect(x + w - 4, y0, 1, h);
+    } else if (p.kind === 'bob') {
+      // Graduation: candy banding brightening toward the gap.
+      const b1 = Math.floor(h / 3), b2 = Math.floor((h * 2) / 3);
+      ctx.fillStyle = `rgba(255,255,255,${0.05 * inkA})`;
+      ctx.fillRect(x, gapSide === 'bottom' ? y0 + b1 : y0, w, gapSide === 'bottom' ? h - b1 : b2);
+      ctx.fillStyle = `rgba(255,255,255,${0.06 * inkA})`;
+      ctx.fillRect(x, gapSide === 'bottom' ? y0 + b2 : y0, w, gapSide === 'bottom' ? h - b2 : b1);
+    } else if (p.kind === 'pulse') {
+      // 808s: heartbeat LED down the center.
+      ctx.fillStyle = `rgba(200,16,46,${(0.25 + 0.7 * lub) * inkA})`;
+      ctx.fillRect(x + Math.floor(w / 2), y0, 1, h);
+    } else if (p.kind === 'drift') {
+      // MBDTF: full gilded frame — both edges + inner double rule.
+      ctx.fillStyle = rgbToCss(rim, rimA * 0.7);
+      ctx.fillRect(x, y0, 1, h);
+      ctx.fillStyle = rgbToCss(rim, rimA * 0.4);
+      ctx.fillRect(x + w - 3, y0, 1, h);
+      ctx.fillRect(x + 2, y0, 1, h);
+    } else if (p.kind === 'jitter') {
+      // Yeezus: the CD's red tape band near the gap mouth + concrete speckle.
+      const bandY = gapSide === 'bottom' ? y0 + h - 9 : y0 + 6;
+      if (h > 14) {
+        ctx.fillStyle = 'rgba(184,35,28,0.85)';
+        ctx.fillRect(x, bandY, w, 3);
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.05)';
+      for (let yy = y0 + 2; yy < y0 + h - 2; yy += 4) {
+        const hh = hash01(yy, p.seed);
+        if (hh < 0.45) ctx.fillRect(x + 2 + Math.floor(hh * (w - 4) / 0.45), yy, 1, 1);
+      }
+    }
+
+    // Lintel cap at the gap mouth: 3 texels tall, 1 texel wider each side.
+    const capY = gapSide === 'bottom' ? y0 + h - 3 : y0;
+    ctx.fillStyle = rgbToCss(rim, 0.30 * mouthA);
+    ctx.fillRect(x - 1, capY, w + 2, 3);
+    ctx.fillStyle = rgbToCss(rim, mouthA);
+    ctx.fillRect(x - 1, gapSide === 'bottom' ? y0 + h - 1 : y0, w + 2, 1);
+  };
+
+  seg(0, topH, 'bottom');
+  seg(botY, botH, 'top');
 }
 
 
