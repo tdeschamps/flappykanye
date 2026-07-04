@@ -10,6 +10,8 @@ export const PHYSICS = {
   PIPE_GAP: 280,
   GROUND: 72,            // visible base strip; the floor of the playfield
   KANYE_R: 22,
+  FOOT: 40,              // anchor→visual-bottom distance; ground contact uses
+                         // this instead of KANYE_R so the chin can't sink in
   // Derived from H by recomputeDims():
   PIPE_W: 110,
   PIPE_DX: 192,
@@ -169,15 +171,17 @@ export function stepPhysics(state, dt) {
   const { kanye } = state;
   const r = PHYSICS.KANYE_R;
 
-  // Era-boundary grace: no deaths, just keep him inside the field.
+  // Era-boundary grace: no deaths, just keep him inside the field. The ground
+  // is a VISIBLE contact plane, so it uses FOOT (the sprite's real bottom),
+  // not the generous pipe radius.
   const floorY = PHYSICS.H - PHYSICS.GROUND;
   if (state.graceT > 0) {
     if (kanye.y - r < 0) { kanye.y = r; kanye.vy = Math.max(0, kanye.vy); }
-    if (kanye.y + r > floorY) { kanye.y = floorY - r; kanye.vy = Math.min(0, kanye.vy); }
+    if (kanye.y + PHYSICS.FOOT > floorY) { kanye.y = floorY - PHYSICS.FOOT; kanye.vy = Math.min(0, kanye.vy); }
     return scored ? 'score' : null;
   }
 
-  if (kanye.y - r < 0 || kanye.y + r > floorY) return 'death';
+  if (kanye.y - r < 0 || kanye.y + PHYSICS.FOOT > floorY) return 'death';
   for (const p of state.pipes) {
     if (kanye.x + r < p.x || kanye.x - r > p.x + PHYSICS.PIPE_W) continue;
     if (kanye.y - r < p.gapY || kanye.y + r > p.gapY + p.gapH) return 'death';
@@ -190,7 +194,7 @@ export function stepDeath(state, dt) {
   state.kanye.vy += PHYSICS.GRAVITY * dt;
   state.kanye.y += state.kanye.vy * dt;
   state.kanye.rot += dt * 4;
-  state.kanye.y = Math.min(state.kanye.y, PHYSICS.H - PHYSICS.GROUND - 20);
+  state.kanye.y = Math.min(state.kanye.y, PHYSICS.H - PHYSICS.GROUND - PHYSICS.FOOT);
 }
 
 export function flap(state) {
