@@ -633,8 +633,8 @@ function drawMonolith(p, era, goat) {
       ctx.fillRect(x + 2, y0, 1, h);
     } else if (p.kind === 'jitter') {
       // Yeezus: the CD's red tape band near the gap mouth + concrete speckle.
-      const bandY = gapSide === 'bottom' ? y0 + h - 9 : y0 + 6;
-      if (h > 14) {
+      const bandY = gapSide === 'bottom' ? y0 + h - 12 : y0 + 9;
+      if (h > 18) {
         ctx.fillStyle = 'rgba(184,35,28,0.85)';
         ctx.fillRect(x, bandY, w, 3);
       }
@@ -645,12 +645,27 @@ function drawMonolith(p, era, goat) {
       }
     }
 
-    // Lintel cap at the gap mouth: 3 texels tall, 1 texel wider each side.
-    const capY = gapSide === 'bottom' ? y0 + h - 3 : y0;
-    ctx.fillStyle = rgbToCss(rim, 0.30 * mouthA);
-    ctx.fillRect(x - 1, capY, w + 2, 3);
+    // Flappy-shaped cap at the gap mouth: a block 5 texels tall, 2 texels
+    // wider each side, outlined in rim light — the canonical pipe silhouette
+    // in monolith material.
+    const capH = 5;
+    const capY = gapSide === 'bottom' ? y0 + h - capH : y0;
+    const cx0 = x - 2, cw = w + 4;
+    ctx.globalAlpha = inkA;
+    ctx.fillStyle = ink;
+    ctx.fillRect(cx0, capY, cw, capH);
+    ctx.fillStyle = SHADOW_PAT;
+    ctx.fillRect(cx0 + cw - 1 - Math.max(2, Math.floor(cw / 3)), capY, Math.max(2, Math.floor(cw / 3)), capH);
+    ctx.globalAlpha = 1;
+    // Outline.
     ctx.fillStyle = rgbToCss(rim, mouthA);
-    ctx.fillRect(x - 1, gapSide === 'bottom' ? y0 + h - 1 : y0, w + 2, 1);
+    ctx.fillRect(cx0, capY, cw, 1);
+    ctx.fillRect(cx0, capY + capH - 1, cw, 1);
+    ctx.fillRect(cx0, capY, 1, capH);
+    ctx.fillRect(cx0 + cw - 1, capY, 1, capH);
+    // Inner highlight on the gap side.
+    ctx.fillStyle = rgbToCss(rim, mouthA * 0.4);
+    ctx.fillRect(cx0 + 1, gapSide === 'bottom' ? capY + capH - 2 : capY + 1, cw - 2, 1);
   };
 
   seg(0, topH, 'bottom');
