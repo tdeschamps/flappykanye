@@ -36,6 +36,7 @@
   .hud {
     position: absolute;
     inset: 0;
+    z-index: 3;   /* above the game canvas — score/labels never hide behind bars */
     pointer-events: none;
     display: flex;
     flex-direction: column;
