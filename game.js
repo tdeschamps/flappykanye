@@ -8,6 +8,7 @@ export const PHYSICS = {
   GRAVITY: 1400,
   FLAP: -460,
   PIPE_GAP: 280,
+  GROUND: 72,            // visible base strip; the floor of the playfield
   KANYE_R: 22,
   // Derived from H by recomputeDims():
   PIPE_W: 110,
@@ -79,7 +80,7 @@ const GAP_MARGIN = 110;   // min distance from screen edges to a gap mouth
 
 export function spawnPipe(state) {
   const gap = state.tuning.gap;
-  const range = PHYSICS.H - GAP_MARGIN * 2 - gap;
+  const range = PHYSICS.H - PHYSICS.GROUND - GAP_MARGIN * 2 - gap;
   let gapY;
   if (state.obstacle === 'wave') {
     // TLOP: gap placement rides a sine across consecutive spawns — high, low,
@@ -122,7 +123,7 @@ function stepObstacles(state) {
     }
     // Clamp movers so a gap mouth never leaves the fair zone.
     if (p.kind === 'bob' || p.kind === 'drift') {
-      p.gapY = Math.max(GAP_MARGIN, Math.min(PHYSICS.H - GAP_MARGIN - p.gapH, p.gapY));
+      p.gapY = Math.max(GAP_MARGIN, Math.min(PHYSICS.H - PHYSICS.GROUND - GAP_MARGIN - p.gapH, p.gapY));
     }
   }
 }
@@ -169,13 +170,14 @@ export function stepPhysics(state, dt) {
   const r = PHYSICS.KANYE_R;
 
   // Era-boundary grace: no deaths, just keep him inside the field.
+  const floorY = PHYSICS.H - PHYSICS.GROUND;
   if (state.graceT > 0) {
     if (kanye.y - r < 0) { kanye.y = r; kanye.vy = Math.max(0, kanye.vy); }
-    if (kanye.y + r > PHYSICS.H) { kanye.y = PHYSICS.H - r; kanye.vy = Math.min(0, kanye.vy); }
+    if (kanye.y + r > floorY) { kanye.y = floorY - r; kanye.vy = Math.min(0, kanye.vy); }
     return scored ? 'score' : null;
   }
 
-  if (kanye.y - r < 0 || kanye.y + r > PHYSICS.H) return 'death';
+  if (kanye.y - r < 0 || kanye.y + r > floorY) return 'death';
   for (const p of state.pipes) {
     if (kanye.x + r < p.x || kanye.x - r > p.x + PHYSICS.PIPE_W) continue;
     if (kanye.y - r < p.gapY || kanye.y + r > p.gapY + p.gapH) return 'death';
@@ -188,7 +190,7 @@ export function stepDeath(state, dt) {
   state.kanye.vy += PHYSICS.GRAVITY * dt;
   state.kanye.y += state.kanye.vy * dt;
   state.kanye.rot += dt * 4;
-  state.kanye.y = Math.min(state.kanye.y, PHYSICS.H - 24);
+  state.kanye.y = Math.min(state.kanye.y, PHYSICS.H - PHYSICS.GROUND - 20);
 }
 
 export function flap(state) {

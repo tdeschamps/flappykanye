@@ -186,6 +186,7 @@ function reset() {
   nowLine.textContent = `ERA I · ${ERAS[0].album} · ${ERAS[0].year}`;
   attractIdx = -1;
   lastEraKey = 0;
+  resetScenery();
   interruptFired = false;
   egoToastFired = false;
   takeoverNext = 7;
@@ -270,6 +271,87 @@ function scorePop() {
   scoreEl.classList.remove('pop');
   void scoreEl.offsetWidth;
   scoreEl.classList.add('pop');
+}
+
+// --- Ground + skyline: the journey from Chicago to LA ---
+// Skyline segments are generated as they enter from the right using the
+// CURRENT era's profile — you fly out of Chicago and into LA. Parallax 0.35×.
+let skyline = [];
+let groundScroll = 0;
+
+function makeBuilding(x, eraIdx) {
+  const r = Math.random;
+  if (eraIdx <= 2) {
+    // Chicago: dense tall blocks; occasional Willis-style antenna tower.
+    if (r() < 0.14) return { x, w: 34 + r() * 20, h: 110 + r() * 40, kind: 'tower', gap: 6 + r() * 16 };
+    return { x, w: 30 + r() * 55, h: 45 + r() * 70, kind: 'block', gap: 4 + r() * 22 };
+  }
+  if (eraIdx <= 4) {
+    // Crossing the country: sparser mid-rises.
+    return { x, w: 26 + r() * 50, h: 28 + r() * 55, kind: 'block', gap: 18 + r() * 45 };
+  }
+  // LA: low sprawl, palms, one rare tall landmark.
+  if (r() < 0.22) return { x, w: 10, h: 34 + r() * 10, kind: 'palm', gap: 14 + r() * 30 };
+  if (r() < 0.05) return { x, w: 30, h: 120 + r() * 20, kind: 'tower', gap: 20 + r() * 30 };
+  return { x, w: 34 + r() * 60, h: 16 + r() * 30, kind: 'block', gap: 10 + r() * 36 };
+}
+
+function stepScenery(dt) {
+  const dx = state.tuning.dx * (state.mode === 'playing' ? 1 : 0.12);
+  groundScroll += dx * dt;
+  const par = dx * 0.35 * dt;
+  for (const b of skyline) b.x -= par;
+  while (skyline.length && skyline[0].x + skyline[0].w < -60) skyline.shift();
+  let right = skyline.length ? skyline[skyline.length - 1] : null;
+  let edge = right ? right.x + right.w + right.gap : -40;
+  while (edge < PHYSICS.W + 120) {
+    const b = makeBuilding(edge, eraFor(state.score).idx);
+    skyline.push(b);
+    edge = b.x + b.w + b.gap;
+  }
+}
+
+function resetScenery() {
+  skyline = [];
+  groundScroll = 0;
+}
+
+function drawScenery(era) {
+  const gy = tx(PHYSICS.H - PHYSICS.GROUND);
+  const TW = canvas.width;
+  const ink = hexToRgb(era.pal.ink);
+  const rim = hexToRgb(era.pal.rim);
+  const sil = mixRgb(ink, [0, 0, 0], 0.4);
+
+  // Skyline silhouette, feet on the ground line.
+  ctx.fillStyle = rgbToCss(sil, 0.55);
+  for (const b of skyline) {
+    const bx = tx(b.x), bw = Math.max(2, tx(b.w)), bh = tx(b.h);
+    if (b.kind === 'palm') {
+      ctx.fillRect(bx + Math.floor(bw / 2), gy - bh, 1, bh);          // trunk
+      ctx.fillRect(bx + Math.floor(bw / 2) - 2, gy - bh - 2, 5, 2);   // fronds
+      ctx.fillRect(bx + Math.floor(bw / 2) - 1, gy - bh - 3, 3, 1);
+    } else {
+      ctx.fillRect(bx, gy - bh, bw, bh);
+      if (b.kind === 'tower') {
+        ctx.fillRect(bx + 2, gy - bh - 4, 1, 4);                       // antennas
+        ctx.fillRect(bx + bw - 3, gy - bh - 4, 1, 4);
+      }
+    }
+  }
+
+  // Ground: rim-lit edge, scrolling stripe lip, dark body.
+  ctx.fillStyle = rgbToCss(mixRgb(ink, [0, 0, 0], 0.5), 1);
+  ctx.fillRect(0, gy, TW, canvas.height - gy);
+  ctx.fillStyle = rgbToCss(rim, 0.5);
+  ctx.fillRect(0, gy, TW, 1);
+  // The classic scrolling stripes.
+  const off = Math.floor(tx(groundScroll)) % 4;
+  ctx.fillStyle = rgbToCss(mixRgb(ink, rim, 0.3), 0.5);
+  for (let x = -off; x < TW; x += 4) ctx.fillRect(x, gy + 1, 2, 2);
+  // Faint texture below.
+  ctx.fillStyle = SHADOW_PAT;
+  ctx.fillRect(0, gy + 4, TW, canvas.height - gy - 4);
 }
 
 // Title-screen discography progress: one dot per era, gold once GOAT reached.
@@ -473,7 +555,7 @@ function drawMonolith(p, era, goat) {
   const w = Math.max(2, tx(PHYSICS.PIPE_W));
   const topH = tx(p.gapY);
   const botY = tx(p.gapY + p.gapH);
-  const botH = canvas.height - botY;
+  const botH = tx(PHYSICS.H - PHYSICS.GROUND) - botY;   // slabs stand on the ground
   const ink = era.pal.ink;
   const rim = goat ? mixRgb(hexToRgb(era.pal.rim), GOLD_RGB, 0.5) : hexToRgb(era.pal.rim);
 
@@ -696,6 +778,7 @@ function update(dt) {
     }
   }
   easeVisual(dt);
+  stepScenery(dt);
   stepParts(dt);
   updateKanye(kanye, state, dt);
 }
@@ -742,6 +825,7 @@ function render() {
     );
   }
 
+  drawScenery(era);
   for (const p of state.pipes) drawMonolith(p, era, goat);
 
   // Donda: a dithered diamond of light so Kanye never vanishes into the void.
